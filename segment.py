@@ -156,7 +156,7 @@ def get_sDevID(size, cRes):
 
 # 키워드 기준으로 가입자 추출(100명)
 def get_keywords_match_devid_100(column_name, match_keywords):
-    es = Elasticsearch(['elasticsearch_ip])
+    es = Elasticsearch([elasticsearch_ip])
     
     wildcard_queries = []
     for keyword in match_keywords:
