@@ -1,0 +1,15 @@
+.idea
+*.xlsx
+*.csv
+*.swp
+*.yaml
+*.udb
+*.txt
+.ipynb_checkpoints
+__pycache__
+train_models
+*.ipynb
+*.html
+*.png
+*.pyc
+*.xls
