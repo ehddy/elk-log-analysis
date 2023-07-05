@@ -1,38 +1,18 @@
 
 from elasticsearch import Elasticsearch
-
 import pandas as pd
-
-import logging
-
 from datetime import datetime
 import pytz
-
 from cluster import *
 from graph import *
-
 import yaml
-
 import requests
 import json
 import socket
-
-import plotly.figure_factory as ff
-
-
 import numpy as np
-import plotly.graph_objects as go
-
 from datetime import timedelta
-
 import random
-
-import plotly.express as px
-
-import plotly.subplots as sp
 import statsmodels.api as sm
-
-
 import warnings
 warnings.filterwarnings('ignore')
 
