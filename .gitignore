@@ -14,3 +14,4 @@ train_models
 *.pyc
 *.xls
 logs
+*.logs
