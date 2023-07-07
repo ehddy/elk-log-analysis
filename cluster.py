@@ -1,6 +1,3 @@
-
-
-
 from segment import *
 from graph import *
 import pandas as pd
@@ -8,10 +5,36 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import pickle
+import logging
+
 import os
 
+# 현재 날짜와 시간을 가져옴
+now = datetime.now()
+
+# 한국 시간대로 변환
+korea_timezone = pytz.timezone("Asia/Seoul")
+korea_time = now.astimezone(korea_timezone)
+
+# 날짜 문자열 추출
+korea_date = korea_time.strftime("%Y-%m-%d")
+
+
+# 로그 파일 이름에 현재 시간을 포함시킵니다.
+log_filename = f'./logs/elastic_program_{korea_date}.log'
+
+
+# 로깅 핸들러를 생성합니다.
+log_handler = logging.FileHandler(log_filename)
+log_handler.setLevel(logging.INFO)
+log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+# 로거를 생성하고 로깅 핸들러를 추가합니다.
+logger = logging.getLogger(f's')
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
+
 def kmeans_modeling():
-    
     # 현재 폴더 경로 확인
     current_path = os.getcwd() + "/"
     
@@ -108,7 +131,7 @@ def return_labels(data):
     cluster_label = loaded_model.predict(principalDf[['component1', 'component2']])
     
     
-    return list(cluster_label)
+    return list(cluster_label)[0]
 
 
 
@@ -124,15 +147,28 @@ def return_total_label_to_elasticsearch(dev_id):
     
     # 차단 조건 
     if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["차단 수"].values >= 50 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 90 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 90:
+        logger.info(f"{dev_id} : Rule 1 matched!")
         save_db_data(dec_data, "abnormal_describe")
         
     elif dec_data["최다 접속 URL"].values == "123.57.193.95" or dec_data["최다 접속 URL"].values == "123.57.193.52":
+        logger.info(f"{dev_id} : Rule 2 matched!")
         save_db_data(dec_data, "abnormal_describe")
     
     else: 
         label = return_devid_cluster_label(dec_data)
-        if label == 4:
+        if label == 2:
+            logger.info(f"{dev_id}(label = 2) : Rule 3 matched!")
             save_db_data(dec_data, "abnormal_describe")
+            return 
+        logger.info(f"{dev_id}(label = {label}) : Normal User")
+
+
+def process():
+    # 랜덤 샘플링 버전
+    dev_id_list = get_sDevID_random()
+    for dev_id in dev_id_list:
+        return_total_label_to_elasticsearch(dev_id)
+
 
 # 실루엣 계수
 def visualize_sil(List, X):
@@ -249,3 +285,4 @@ def visualize_sil(List, X):
         )
 
     plt.show()
+    

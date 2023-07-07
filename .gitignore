@@ -13,3 +13,4 @@ train_models
 *.png
 *.pyc
 *.xls
+logs

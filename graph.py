@@ -1,29 +1,20 @@
 
 import pytz
 from segment import *
-from cluster import *
 
 import plotly.subplots as sp
 import plotly.figure_factory as ff
-
-
 import numpy as np
-import plotly.graph_objects as go
-
 from datetime import timedelta
-
-
+import plotly.graph_objects as go
 import plotly.express as px
-
 import plotly.subplots as sp
 import statsmodels.api as sm
 import warnings
 warnings.filterwarnings('ignore')
 
+
 ### 시각화 함수 모음 
-
-
-
 def category_pie_plot(data, column_name):
 
     res_counts = data[column_name].value_counts()[:5]
@@ -35,7 +26,6 @@ def category_pie_plot(data, column_name):
     
     return fig
 
-    
     
     
 def minute_connect_plot(data):
@@ -338,3 +328,86 @@ def seasonal_decompose_plot(data, period=5):
     return fig
 
     
+def gage_chart(describe_data, column_name):
+    # 필요한 데이터
+    value = describe_data[column_name][0]
+    min_value = 0
+    max_value = 100
+
+    # 게이지 차트 생성
+    fig = go.Figure()
+
+    fig.add_trace(go.Indicator(
+        mode = "gauge+number",
+        value = value,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = column_name,
+        gauge = {
+            'axis': {'range': [min_value, max_value]},
+            'bar': {'color': "darkblue"},
+            'steps': [
+                {'range': [min_value, max_value], 'color': 'lightgray'}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': value
+            }
+        }
+    ))
+    return fig
+
+
+def text_chart(describe_data, column_name):
+    # 데이터 프레임에서 특정 값 추출
+    value = describe_data[column_name].values[0]
+
+    # 플롯 생성
+    fig = go.Figure()
+
+    # 특정 값 표시
+    fig.add_trace(go.Indicator(
+    mode="number",
+    value=value,
+    title=column_name,
+    ))
+
+    
+    # 대시보드 레이아웃 설정
+    fig.update_layout(
+    title="",
+    title_font=dict(size=24),
+    )
+    
+    
+    
+    # 대시보드 출력
+    return fig
+
+
+
+
+# 데이터프레임에서 데이터 추출 및 뒤집기
+def ip_location_table(ip_describe):
+    data = ip_describe.transpose().values.tolist()
+    columns = ip_describe.columns.tolist()
+
+    # 데이터 표 그림 생성
+    fig = go.Figure(data=[go.Table(
+        header=dict(values=columns,
+                    fill_color='gray',
+                    align='center',
+                    font=dict(color='black', size=14),
+                    height=30),
+        cells=dict(values=data,
+                   fill=dict(color='white'),
+                   align='center',
+                   font=dict(color='black', size=12),
+                   height=25),
+    )])
+
+    # 셀 너비 조정
+    fig.update_layout(width=800)
+
+    return fig
+

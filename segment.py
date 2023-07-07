@@ -6,6 +6,9 @@ import pytz
 from cluster import *
 from graph import *
 import yaml
+import plotly.graph_objects as go
+import plotly.express as px
+import plotly.subplots as sp
 import requests
 import json
 import socket
@@ -13,8 +16,13 @@ import numpy as np
 from datetime import timedelta
 import random
 import statsmodels.api as sm
+import plotly.offline as pyo
+from plotly.subplots import make_subplots
 import warnings
+from elastic_transport import ConnectionTimeout
+
 warnings.filterwarnings('ignore')
+
 
 
 with open('config.yaml', encoding='UTF-8') as f:
@@ -77,8 +85,7 @@ def get_sDevID_random():
 
     # 랜덤으로 100개의 값을 선택하여 추출
     random_sDevID_list = random.sample(sDevID_list, 500)
-
-
+    print(f"Random 500 users extraction completed!")
     return random_sDevID_list
 
 # 차단 허용 기준으로 가입자 추출
@@ -228,62 +235,67 @@ def get_index_data(index_name):
     data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
     data = pd.concat([data, data_scroll])
 
+    data.reset_index(drop=True, inplace=True)
     
     return data
     
-    return df 
+
 
 
 # 가입자 이름을 기준으로 모든 데이터 추출 
 def get_sDevID_data(user_id):
     es = Elasticsearch([elasticsearch_ip])
     # Elasticsearch에서 데이터 검색
-    res = es.search(
-        index='sa*',
-        body={
-            "query": {
-                "bool": {
-                    "must": [
-                        {
-                            "term": {
-                                "sDevID.keyword": user_id  # 해당 유저의 아이디로 필터링
-                            }
-                        },
-                        {
-                            "range": {
-                                "@timestamp": {
-                                    "gte": "now-1h",
-                                    "lt": "now"
+    try:
+        res = es.search(
+            index='sa*',
+            body={
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "term": {
+                                    "sDevID.keyword": user_id  # 해당 유저의 아이디로 필터링
+                                }
+                            },
+                            {
+                                "range": {
+                                    "@timestamp": {
+                                        "gte": "now-1h",
+                                        "lt": "now"
+                                    }
                                 }
                             }
-                        }
-                    ]
-                }
+                        ]
+                    }
+                },
+                "size": 10000
             },
-            "size": 10000
-        },
-        scroll='10m'  # 스크롤 유지 시간 설정
-    )
-    
-    # 첫 번째 스크롤 결과 가져오기
-    data = pd.DataFrame([hit['_source'] for hit in res['hits']['hits']])
-    
-    
-    scroll_id = res['_scroll_id']
-    hits_list = []
-    
-    while True:
-        res = es.scroll(scroll_id=scroll_id, scroll='10m')
-        if len(res['hits']['hits']) == 0:
-            break
-        hits = res['hits']['hits']
-        hits_list.extend(hits)
-    
-    es.clear_scroll(scroll_id=scroll_id)
-    data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
-    data = pd.concat([data, data_scroll])
+            scroll='10m'  # 스크롤 유지 시간 설정
+        )
+        
+        # 첫 번째 스크롤 결과 가져오기
+        data = pd.DataFrame([hit['_source'] for hit in res['hits']['hits']])
+        
+        
+        scroll_id = res['_scroll_id']
+        hits_list = []
+        
+        while True:
+            res = es.scroll(scroll_id=scroll_id, scroll='10m')
+            if len(res['hits']['hits']) == 0:
+                break
+            hits = res['hits']['hits']
+            hits_list.extend(hits)
+        
+        es.clear_scroll(scroll_id=scroll_id)
+        data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
+        data = pd.concat([data, data_scroll])
 
-    
+    except ConnectionTimeout as e:
+        # ConnectionTimeout 오류 처리 코드
+        print("Connection timed out:", e)
+        return 
     return data
 
 
@@ -336,6 +348,116 @@ def get_category_match_data(column_name, match_keyword):
     data = pd.concat([data, data_scroll])
 
     return data
+
+
+def get_device_id_dash(dev_id):
+    dev_data = get_sDevID_data(dev_id)
+    scaled_data = preprocessing_data(dev_data)
+    data = add_new_columns(scaled_data)
+    describe_data = describe(data)
+    return_label = return_devid_cluster_label(describe_data)
+    labels_df = pd.DataFrame(return_label, columns=["label"])
+    
+    user_name = describe_data['가입자 ID'][0]
+    ip_describe = get_ip_describe(data)
+    top_country = ip_describe.groupby('country')['connect_count'].sum().sort_values(ascending=False)[:1].index[0]
+
+    
+    specs = [
+        [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
+        [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
+        [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
+        [None, None, None, None],
+        [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
+        [None, None, None, None],
+        [{'type': 'indicator', 'colspan' : 2, 'rowspan': 2}, None, {'type': 'indicator', 'colspan' : 2, 'rowspan': 2}, None], 
+        [None, None, None, None],     
+    ]
+    
+    font_family = 'Pretendard Black, sans-serif'
+
+    # {'type': 'xy', 'colspan': 2}, None,
+    fig1 = gage_chart(describe_data, '차단율(%)')
+    fig2 = gage_chart(describe_data, '최대 빈도 URL 접속 비율(%)')
+    fig3 = gage_chart(describe_data, '최다 이용 UA 접속 비율(%)')
+    fig4 = gage_chart(describe_data, '접속 횟수 대비 고유 URL 비율(%)')
+    fig6 = text_chart(describe_data, '전체 접속 횟수')
+    fig7 = text_chart(describe_data, '평균 접속 수(1분)')
+    fig8 = text_chart(describe_data, '평균 접속 간격(초)')
+    fig9 = text_chart(describe_data, '접속 UA 수')
+    fig10 = value_counts_top10_bar(data, 'sHost')
+    fig11 = value_counts_top10_bar(data, 'sUA')
+    fig12 = seasonal_decompose_plot(data, period=5)
+    fig13 = ip_location_table(ip_describe)
+    fig14 = text_chart(labels_df, 'label')
+
+    # 대시보드 그래프 배열
+    fig = make_subplots(
+        rows=8, cols=4,
+        vertical_spacing=0.1,
+        horizontal_spacing=0.1, 
+        specs=specs,  # 그래프 간의 수직 간격 조정
+        subplot_titles=['', '', '', '', 
+                       '', '','','',
+                       'Connect Pattern','Top 10 URL/UA', '', '', 
+                        f"Country of the IP address with the highest proportion : {top_country}"]
+    )
+
+    fig10.data[0]['showlegend'] = False
+    fig11.data[0]['showlegend'] = False
+    fig12.data[0]['showlegend'] = False
+    fig12.data[2]['showlegend'] = False
+
+    fig10.data[0]['marker']['color'] = 'rgb(211, 211, 211)'
+    fig11.data[0]['marker']['color'] = 'rgb(211, 211, 211)'
+
+    # 그래프에 폰트 적용
+    fig.update_layout(
+        font=dict(family=font_family)
+    )
+
+    fig.add_trace(fig1.data[0], row=2, col=1)
+    fig.add_trace(fig2.data[0], row=2, col=2)
+    fig.add_trace(fig3.data[0], row=2, col=3)
+    fig.add_trace(fig4.data[0], row=2, col=4)
+    # fig.add_trace(fig5.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig6.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig7.data[0], row=1, col=2)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig8.data[0], row=1, col=3)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig9.data[0], row=1, col=4)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig10.data[0], row=3, col=3)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig11.data[0], row=5, col=3)  # colspan을 사용하여 두 개의 열 차지
+    fig.add_trace(fig12.data[0], row=3, col=1)
+    fig.add_trace(fig12.data[2], row=5, col=1)
+    fig.add_trace(fig13.data[0], row=7, col=1)
+    fig.add_trace(fig14.data[0], row=7, col=3)
+
+    # fig.add_trace(fig12.data[1], row=6, col=1)
+    # fig.add_trace(fig12.data[2], row=7, col=1)
+    # fig.add_trace(fig12.data[3], row=8, col=1)
+
+
+    # 특정 그래프의 Y 축 제목 설정
+    fig.update_yaxes(title_text='Original', title_font=dict(size=15), row=3, col=1)
+    fig.update_yaxes(title_text='Seasonality', title_font=dict(size=15), row=5, col=1)
+
+
+    # 표 레이아웃 설정
+    fig.update_layout(
+        title={
+            'text': f"<{user_name}> Status in the Last 1 Hour",
+             'font': {'size': 30, 'family': font_family}
+        },
+    )
+
+
+
+    # # 대시보드 출력
+    # fig.show()
+
+    # 그래프를 HTML로 저장
+    pyo.plot(fig, filename='dashboard.html')
+
 
 
 # 3) 데이터 통합용 
