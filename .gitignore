@@ -15,4 +15,5 @@ train_models
 *.xls
 logs
 *.log
+docker_images
 flask_project

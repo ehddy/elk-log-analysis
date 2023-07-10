@@ -1,6 +1,7 @@
 
 from elasticsearch import Elasticsearch
 import pandas as pd
+from elastic_transport import ConnectionTimeout
 from datetime import datetime
 import pytz
 from cluster import *
@@ -21,6 +22,7 @@ from plotly.subplots import make_subplots
 import warnings
 import logging
 warnings.filterwarnings('ignore')
+import os 
 
 
 # 현재 날짜와 시간을 가져옴
@@ -34,8 +36,15 @@ korea_time = now.astimezone(korea_timezone)
 korea_date = korea_time.strftime("%Y-%m-%d")
 
 
+current_path = os.getcwd() + "/"
+
+
 # 로그 파일 이름에 현재 시간을 포함시킵니다.
-log_filename = f'./logs/save_elasticsearch/save_program_{korea_date}.log'
+try:
+    log_filename = current_path + f'logs/model_result/elastic_program_{korea_date}.log'
+
+except:
+    log_filename = f'code/logs/model_result/elastic_program_{korea_date}.log'
 
 
 
@@ -49,12 +58,18 @@ logger = logging.getLogger(f'd')
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 
-with open('config.yaml', encoding='UTF-8') as f:
-    _cfg = yaml.load(f, Loader=yaml.FullLoader)
+try:
+    with open('/code/config.yaml', encoding='UTF-8') as f:
+        _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']    
-    
-    
+    elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']    
+
+except:
+    with open(current_path + 'config.yaml', encoding='UTF-8') as f:
+        _cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+    elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']    
+
 # UTC 시간을 한국 시간으로 변환하는 함수
 def utc_to_kst(utc_time):
     kst = pytz.timezone('Asia/Seoul')
@@ -69,6 +84,7 @@ def utc_to_kst(utc_time):
 
 # 랜덤하게 가입자 추출
 def get_sDevID_random(time_choice):
+    
     # Elasticsearch 연결
     es = Elasticsearch([elasticsearch_ip])
 
@@ -278,6 +294,7 @@ def get_index_data(index_name):
 
 # 가입자 이름을 기준으로 모든 데이터 추출 
 def get_sDevID_data(user_id):
+    
     es = Elasticsearch([elasticsearch_ip])
     # Elasticsearch에서 데이터 검색
     res = es.search(
@@ -725,11 +742,14 @@ def get_ip_describe(data):
 def save_db_random_devid():
     sDevID_list = get_sDevID_random("1m")
     for dev_id in sDevID_list:
-        dec_data = get_final_dec_data_dev_id(dev_id)
-        # 데이터프레임을 Elasticsearch 문서 형식으로 변환
-        index_name =  'describe'
-        save_db_data(dec_data, index_name)
-        logger.info(f"save success {dev_id} data(index name : {index_name})")
+        try:
+            dec_data = get_final_dec_data_dev_id(dev_id)
+            # 데이터프레임을 Elasticsearch 문서 형식으로 변환
+            index_name =  'describe'
+            save_db_data(dec_data, index_name)
+            logger.info(f"save success {dev_id} data(index name : {index_name})")
+        except:
+            continue
         
 # 인덱스 정책   
 def apply_lifecycle_policy(index_name, policy_name):
@@ -889,3 +909,27 @@ def add_new_columns(data):
     return data 
     
 
+# 인덱스 자동 삭제
+def delete_old_indices(index_prefix, num_days_to_keep):
+    es = Elasticsearch([elasticsearch_ip])
+
+    # 현재 날짜와 시간을 가져옴
+    now = datetime.now()
+
+    # 한국 시간대로 변환
+    korea_timezone = pytz.timezone("Asia/Seoul")
+    korea_time = now.astimezone(korea_timezone)
+
+    # 삭제할 기준 날짜 계산
+    delete_date = korea_time - timedelta(days=num_days_to_keep)
+    delete_date_str = delete_date.strftime("%Y-%m-%d")
+
+
+    # 삭제할 인덱스 이름 리스트 생성
+    indices_to_delete = [index for index in es.indices.get(index=f"{index_prefix}-*") if index < f"{index_prefix}-{delete_date_str}"]
+    
+    
+    # 인덱스 삭제
+    for index in indices_to_delete:
+        es.indices.delete(index=index)
+        
