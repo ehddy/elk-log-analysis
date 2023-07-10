@@ -1,14 +1,12 @@
-from cluster import *
+from segment import *
 import schedule
 import time
 
 
-
 def run_scheduler():
-    process()
+    save_db_random_devid()
 
-    # 1시간마다 get_db() 함수를 실행하는 스케줄러 함수입니다.
-    schedule.every(10).minutes.do(process)
+    schedule.every(10).minutes.do(save_db_random_devid)
 
     while True:
         schedule.run_pending()

@@ -324,7 +324,6 @@ def seasonal_decompose_plot(data, period=5):
     fig.update_yaxes(title_text='Residuals', row=4, col=1)
 
     # 그래프 출력
-    
     return fig
 
     

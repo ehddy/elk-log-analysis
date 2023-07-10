@@ -21,7 +21,7 @@ korea_date = korea_time.strftime("%Y-%m-%d")
 
 
 # 로그 파일 이름에 현재 시간을 포함시킵니다.
-log_filename = f'./logs/elastic_program_{korea_date}.log'
+log_filename = f'./logs/model_result/elastic_program_{korea_date}.log'
 
 
 # 로깅 핸들러를 생성합니다.
@@ -126,12 +126,12 @@ def return_labels(data):
     printcipalComponents = loaded_pca.transform(select_data_scaled)
 
     principalDf = pd.DataFrame(data=printcipalComponents, columns = ['component1', 'component2'])
-    # # 주성분으로 이루어진 데이터 프레임 구성
     
+    # # 주성분으로 이루어진 데이터 프레임 구성
     cluster_label = loaded_model.predict(principalDf[['component1', 'component2']])
     
     
-    return list(cluster_label)[0]
+    return list(cluster_label)
 
 
 
@@ -155,7 +155,7 @@ def return_total_label_to_elasticsearch(dev_id):
         save_db_data(dec_data, "abnormal_describe")
     
     else: 
-        label = return_devid_cluster_label(dec_data)
+        label = return_devid_cluster_label(dec_data)[0]
         if label == 2:
             logger.info(f"{dev_id}(label = 2) : Rule 3 matched!")
             save_db_data(dec_data, "abnormal_describe")
@@ -165,7 +165,11 @@ def return_total_label_to_elasticsearch(dev_id):
 
 def process():
     # 랜덤 샘플링 버전
-    dev_id_list = get_sDevID_random()
+    # dev_id_list = get_sDevID_random("1m")
+
+    # 허용 block 혼합 버전
+    dev_id_list = get_pass_block_dev_list()
+
     for dev_id in dev_id_list:
         return_total_label_to_elasticsearch(dev_id)
 

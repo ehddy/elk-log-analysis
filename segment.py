@@ -19,11 +19,35 @@ import statsmodels.api as sm
 import plotly.offline as pyo
 from plotly.subplots import make_subplots
 import warnings
-from elastic_transport import ConnectionTimeout
-
+import logging
 warnings.filterwarnings('ignore')
 
 
+# 현재 날짜와 시간을 가져옴
+now = datetime.now()
+
+# 한국 시간대로 변환
+korea_timezone = pytz.timezone("Asia/Seoul")
+korea_time = now.astimezone(korea_timezone)
+
+# 날짜 문자열 추출
+korea_date = korea_time.strftime("%Y-%m-%d")
+
+
+# 로그 파일 이름에 현재 시간을 포함시킵니다.
+log_filename = f'./logs/save_elasticsearch/save_program_{korea_date}.log'
+
+
+
+# 로깅 핸들러를 생성합니다.
+log_handler = logging.FileHandler(log_filename)
+log_handler.setLevel(logging.INFO)
+log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+# 로거를 생성하고 로깅 핸들러를 추가합니다.
+logger = logging.getLogger(f'd')
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
 
 with open('config.yaml', encoding='UTF-8') as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
@@ -44,7 +68,7 @@ def utc_to_kst(utc_time):
 # 1) 가입자 리스트 추출 
 
 # 랜덤하게 가입자 추출
-def get_sDevID_random():
+def get_sDevID_random(time_choice):
     # Elasticsearch 연결
     es = Elasticsearch([elasticsearch_ip])
 
@@ -65,7 +89,7 @@ def get_sDevID_random():
             "query": {
                 "range": {
                     "@timestamp": {
-                        "gte": "now-1h",
+                        "gte": f"now-{time_choice}",
                         "lt": "now"
                     }
                 }
@@ -84,14 +108,16 @@ def get_sDevID_random():
         sDevID_list.append(bucket['key'])
 
     # 랜덤으로 100개의 값을 선택하여 추출
-    random_sDevID_list = random.sample(sDevID_list, 500)
-    print(f"Random 500 users extraction completed!")
+    random_sDevID_list = random.sample(sDevID_list, 100)
+
+
     return random_sDevID_list
 
 # 차단 허용 기준으로 가입자 추출
-def get_sDevID(size, cRes):
+def get_sDevID(cRes, min_count, time_choice):
     # Elasticsearch 연결
     es = Elasticsearch([elasticsearch_ip])
+    
 
     # Elasticsearch에서 데이터 검색
     res = es.search(
@@ -102,8 +128,8 @@ def get_sDevID(size, cRes):
             "devid_count": {
                 "terms": {
                     "field": "sDevID.keyword",
-                    "min_doc_count": 1000,
-                    "size": size,
+                    "min_doc_count": min_count,
+                    "size": 10000,
                     "exclude": "?"
                 }
             }
@@ -114,7 +140,7 @@ def get_sDevID(size, cRes):
                     {
                         "range": {
                             "@timestamp": {
-                                "gte": "now-1h",
+                                "gte": f"now-{time_choice}",
                                 "lt": "now"
                             }
                         }
@@ -140,6 +166,14 @@ def get_sDevID(size, cRes):
         sDevID_list.append(bucket['key'])
     
     return sDevID_list
+
+def get_pass_block_dev_list():
+    block_list = get_sDevID("차단", 1, '30m')
+    pass_list = get_sDevID('허용', 5000, '30m')
+    
+    total_dev_list = list(set(block_list + pass_list))
+    
+    return total_dev_list
 
 # 키워드 기준으로 가입자 추출(100명)
 def get_keywords_match_devid_100(column_name, match_keywords):
@@ -246,56 +280,52 @@ def get_index_data(index_name):
 def get_sDevID_data(user_id):
     es = Elasticsearch([elasticsearch_ip])
     # Elasticsearch에서 데이터 검색
-    try:
-        res = es.search(
-            index='sa*',
-            body={
-                "query": {
-                    "bool": {
-                        "must": [
-                            {
-                                "term": {
-                                    "sDevID.keyword": user_id  # 해당 유저의 아이디로 필터링
-                                }
-                            },
-                            {
-                                "range": {
-                                    "@timestamp": {
-                                        "gte": "now-1h",
-                                        "lt": "now"
-                                    }
+    res = es.search(
+        index='sa*',
+        body={
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "term": {
+                                "sDevID.keyword": user_id  # 해당 유저의 아이디로 필터링
+                            }
+                        },
+                        {
+                            "range": {
+                                "@timestamp": {
+                                    "gte": "now-1h",
+                                    "lt": "now"
                                 }
                             }
-                        ]
-                    }
-                },
-                "size": 10000
+                        }
+                    ]
+                }
             },
-            scroll='10m'  # 스크롤 유지 시간 설정
-        )
-        
-        # 첫 번째 스크롤 결과 가져오기
-        data = pd.DataFrame([hit['_source'] for hit in res['hits']['hits']])
-        
-        
-        scroll_id = res['_scroll_id']
-        hits_list = []
-        
-        while True:
-            res = es.scroll(scroll_id=scroll_id, scroll='10m')
-            if len(res['hits']['hits']) == 0:
-                break
-            hits = res['hits']['hits']
-            hits_list.extend(hits)
-        
-        es.clear_scroll(scroll_id=scroll_id)
-        data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
-        data = pd.concat([data, data_scroll])
+            "size": 10000
+        },
+        scroll='10m'  # 스크롤 유지 시간 설정
+    )
+    
+    # 첫 번째 스크롤 결과 가져오기
+    data = pd.DataFrame([hit['_source'] for hit in res['hits']['hits']])
+    
+    
+    scroll_id = res['_scroll_id']
+    hits_list = []
+    
+    while True:
+        res = es.scroll(scroll_id=scroll_id, scroll='10m')
+        if len(res['hits']['hits']) == 0:
+            break
+        hits = res['hits']['hits']
+        hits_list.extend(hits)
+    
+    es.clear_scroll(scroll_id=scroll_id)
+    data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
+    data = pd.concat([data, data_scroll])
 
-    except ConnectionTimeout as e:
-        # ConnectionTimeout 오류 처리 코드
-        print("Connection timed out:", e)
-        return 
+    
     return data
 
 
@@ -691,43 +721,24 @@ def get_ip_describe(data):
     return describe_url_df
 
 
-
-## 2. save(저장)
-
-
-# 1) Elasticsearch에 저장 
-
 # 랜덤 가입자 집계 데이터 저장 
 def save_db_random_devid():
-    es = Elasticsearch([elasticsearch_ip])
-    
-    
-    # 현재 날짜와 시간을 가져옴
-    now = datetime.now()
-
-    # 한국 시간대로 변환
-    korea_timezone = pytz.timezone("Asia/Seoul")
-    korea_time = now.astimezone(korea_timezone)
-
-    # 날짜 문자열 추출
-    korea_date = korea_time.strftime("%Y-%m-%d")
-
-    sDevID_list = get_sDevID_random()
+    sDevID_list = get_sDevID_random("1m")
     for dev_id in sDevID_list:
-        
-        data = get_sDevID_data(dev_id)
-        scaled_data = preprocessing_data(data)
-        new_data = add_new_columns(scaled_data)
-        dec_data = describe(new_data)
+        dec_data = get_final_dec_data_dev_id(dev_id)
         # 데이터프레임을 Elasticsearch 문서 형식으로 변환
-        documents = dec_data.to_dict(orient='records')
+        index_name =  'describe'
+        save_db_data(dec_data, index_name)
+        logger.info(f"save success {dev_id} data(index name : {index_name})")
+        
+# 인덱스 정책   
+def apply_lifecycle_policy(index_name, policy_name):
+    es = Elasticsearch([elasticsearch_ip])
+    es.index_lifecycle.start(
+        index=index_name,
+        policy_name=policy_name
+    )
 
-        # Elasticsearch에 데이터 색인
-        index_name = f'describe-{korea_date}'  # 저장할 인덱스 이름
-        for doc in documents:
-            es.index(index=index_name, body=doc)
-    print('{}개 저장 완료'.format(len(sDevID_list)))
-    
     
 # 집계 데이터 특정 index_name에 저장 
 def save_db_data(dec_data, index_name):
