@@ -2,12 +2,11 @@
 *.xlsx
 *.csv
 *.swp
-*.yaml
+config.yaml
 *.udb
 *.txt
 .ipynb_checkpoints
 __pycache__
-train_models
 *.ipynb
 *.html
 *.png
