@@ -41,10 +41,10 @@ current_path = os.getcwd() + "/"
 
 # 로그 파일 이름에 현재 시간을 포함시킵니다.
 try:
-    log_filename = current_path + f'logs/model_result/elastic_program_{korea_date}.log'
+    log_filename = current_path + f'logs/save_elasticsearch/elastic_program_{korea_date}.log'
 
 except:
-    log_filename = f'code/logs/model_result/elastic_program_{korea_date}.log'
+    log_filename = f'code/logs/save_elasticsearch/elastic_program_{korea_date}.log'
 
 
 
