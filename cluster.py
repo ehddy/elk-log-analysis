@@ -1,5 +1,5 @@
-from segment import *
-from graph import *
+from .segment import *
+from .graph import *
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -15,6 +15,7 @@ import matplotlib.cm as cm
 import os
 
 
+
 # 현재 날짜와 시간을 가져옴
 now = datetime.now()
 
@@ -28,20 +29,19 @@ korea_time = now.astimezone(korea_timezone)
 korea_date = korea_time.strftime("%Y-%m-%d")
 
 
-# 로그 파일 이름에 현재 시간을 포함시킵니다.
-try:
-    log_filename = current_path + f'logs/model_result/elastic_program_{korea_date}.log'
 
-except:
-    log_filename = f'code/logs/model_result/elastic_program_{korea_date}.log'
-    
+log_folder = current_path + 'logs/model_result/'
+os.makedirs(log_folder, exist_ok=True)
+
+log_filename = log_folder + f'elastic_program_{korea_date}.log'
+
 # 로깅 핸들러를 생성합니다.
 log_handler = logging.FileHandler(log_filename)
 log_handler.setLevel(logging.INFO)
 log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 
 # 로거를 생성하고 로깅 핸들러를 추가합니다.
-logger = logging.getLogger(f's')
+logger = logging.getLogger('s')
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 

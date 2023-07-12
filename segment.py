@@ -4,8 +4,8 @@ import pandas as pd
 from elastic_transport import ConnectionTimeout
 from datetime import datetime
 import pytz
-from cluster import *
-from graph import *
+from .cluster import *
+# from graph import *
 import yaml
 import plotly.graph_objects as go
 import plotly.express as px
@@ -40,13 +40,11 @@ current_path = os.getcwd() + "/"
 
 
 # 로그 파일 이름에 현재 시간을 포함시킵니다.
-try:
-    log_filename = current_path + f'logs/save_elasticsearch/elastic_program_{korea_date}.log'
 
-except:
-    log_filename = f'code/logs/save_elasticsearch/elastic_program_{korea_date}.log'
+log_folder = current_path + 'logs/save_elasticsearch/'
+os.makedirs(log_folder, exist_ok=True)
 
-
+log_filename = log_folder + f'elastic_program_{korea_date}.log'
 
 # 로깅 핸들러를 생성합니다.
 log_handler = logging.FileHandler(log_filename)
@@ -54,21 +52,19 @@ log_handler.setLevel(logging.INFO)
 log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 
 # 로거를 생성하고 로깅 핸들러를 추가합니다.
-logger = logging.getLogger(f'd')
+logger = logging.getLogger('s')
 logger.setLevel(logging.INFO)
 logger.addHandler(log_handler)
 
-try:
-    with open('/code/config.yaml', encoding='UTF-8') as f:
-        _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']    
+ 
 
-except:
-    with open(current_path + 'config.yaml', encoding='UTF-8') as f:
-        _cfg = yaml.load(f, Loader=yaml.FullLoader)
+with open(current_path + 'config.yaml', encoding='UTF-8') as f:
+    _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-    elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']    
+elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']  
+
+
 
 # UTC 시간을 한국 시간으로 변환하는 함수
 def utc_to_kst(utc_time):
@@ -503,7 +499,8 @@ def get_device_id_dash(dev_id):
     # fig.show()
 
     # 그래프를 HTML로 저장
-    pyo.plot(fig, filename='dashboard.html')
+    # pyo.plot(fig, filename='dashboard.html')
+    return fig 
 
 
 

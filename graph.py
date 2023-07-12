@@ -1,6 +1,6 @@
 
 import pytz
-from segment import *
+from .segment import *
 
 import plotly.subplots as sp
 import plotly.figure_factory as ff
