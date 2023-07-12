@@ -1025,6 +1025,54 @@ class Modeling(Elk):
 #     with open(scaler_path, 'wb') as file:
 #         pickle.dump(scaler, file)
 
+    def dbscan_modeling(self):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # 학습용 데이터 불러오기
+        data = self.get_index_data('describe*').reset_index(drop=True)
+        
+        # 학습용 데이터 전처리(중복 데이터 삭제, 접속시간=0, 접속수=0 데이터 삭제)
+        data = self.train_data_preprocessing(data)
+        
+
+        data = data[self.select_columns]
+        
+        # pca 진행
+        principalDf = self.pca_num_choice(data, 2)
+        
+        scaled_data = pd.DataFrame(self.standard_transfrom(principalDf), columns=principalDf.columns)
+        
+        dbscan = DBSCAN(eps=0.3, min_samples=5).fit(scaled_data)
+
+        scaled_data['dbscan_label'] = dbscan.labels_
+        
+        # kmeans 모델 저장 경로
+        model_path =  f'{folder_path}/dbscan_model.pkl'
+        
+        # 모델 저장
+        with open(model_path, 'wb') as f:
+            pickle.dump(dbscan, f)
+        
+        print(model_path, '모델 저장 완료')
+        
+        # Scatter plot 그리기
+        fig = px.scatter(scaled_data, x='component1', y='component2', color=scaled_data['dbscan_label'])
+
+
+        # HTML 파일로 저장
+        html_path = self.current_path + "dbscan_scatter_plot.html"
+        fig.write_html(html_path)
+        
+        
+        
+        print(html_path, 'cluster plot 저장 완료')
+#         # 저장된 모델 불러오기
+#         with open('dbscan_model.pkl', 'rb') as f:
+#             loaded_dbscan = pickle.load(f)
+
+        
+
     def import_model(self):
         
         
