@@ -1,12 +1,13 @@
-from segment import *
+from elk_program import Elk
 import schedule
 import time
 
 
 def run_scheduler():
-    save_db_random_devid()
+    app = Elk()
+    app.save_db_random_devid()
 
-    schedule.every(10).minutes.do(save_db_random_devid)
+    schedule.every(10).minutes.do(app.save_db_random_devid)
 
     while True:
         schedule.run_pending()
