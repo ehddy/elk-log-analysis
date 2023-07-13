@@ -816,7 +816,7 @@ class Modeling(Elk):
 
 
         # 변수 선택 
-        self.select_columns = ['평균 접속 수(1분)', '최다 이용 UA 접속 수', '최대 빈도 URL 접속 횟수', '평균 접속 횟수(1개 URL)', '최대 연속 URL 접속 횟수', '고유 접속 URL 수', '평균 패킷 길이']
+        self.select_columns =  ['평균 접속 수(1분)' ,'평균 접속 간격(초)', '접속 횟수 대비 고유 URL 비율(%)', '최다 이용 UA 접속 비율(%)' ,'최다 연속 URL 접속 비율(%)', '최대 빈도 URL 접속 비율(%)','평균 패킷 길이']
 
         with open(self.current_path + 'config.yaml', encoding='UTF-8') as f:
             _cfg = yaml.load(f, Loader=yaml.FullLoader)
@@ -830,29 +830,46 @@ class Modeling(Elk):
 
 
     def train_data_preprocessing(self, data):
-        # 중복되는 가입자 ID 삭제, 가장 최근 기록만 남김
-        data = data.drop_duplicates(subset="가입자 ID", keep='last')
-        data.reset_index(drop=True, inplace=True)
-        
-        # 접속 시간이 0인 데이터 삭제 
-        zero_connect_time_index = data[data['접속 시간(분)'] == 0].index
-        data = data.drop(zero_connect_time_index)
 
-        # 평균 접속 시간이 0인 데이터 삭제 
-        zero_connect_count_index = data[data['평균 접속 수(1분)'] == 0.0].index
-        data = data.drop(zero_connect_count_index)
+#         # 접속 시간이 0인 데이터 삭제 
+#         zero_connect_time_index = data[data['접속 시간(분)'] == 0].index
+#         data = data.drop(zero_connect_time_index)
+
+#         # 평균 접속 시간이 0인 데이터 삭제 
+#         zero_connect_count_index = data[data['평균 접속 수(1분)'] == 0.0].index
+#         data = data.drop(zero_connect_count_index)
         
         data.reset_index(drop=True, inplace=True)
 
         return data
 
-    # 데이터 표준화
-    def standard_transfrom(self, data):
-        X  = data.values
+
+    # 데이터 표준화 저장 
+    def save_standard_transform(self, data):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        X = data.values
+
+        # 데이터 표준화
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         
-        return X_scaled
+        result_data = pd.DataFrame(X_scaled, columns=data.columns)
+
+
+        # 스케일러 저장 경로
+        scaler_path = f'{folder_path}/scaler.pkl'
+
+        # 스케일러 저장
+        with open(scaler_path, 'wb') as file:
+            pickle.dump(scaler, file)
+            
+        print(scaler_path, 'scaler 저장 완료')
+        
+        return result_data
+
+
         
         
 
@@ -951,51 +968,31 @@ class Modeling(Elk):
         
         # 학습용 데이터 불러오기
         data = self.get_index_data('describe*').reset_index(drop=True)
-        
-        # 학습용 데이터 전처리(중복 데이터 삭제, 접속시간=0, 접속수=0 데이터 삭제)
+        print('학습용 데이터 불러오기 완료')
         data = self.train_data_preprocessing(data)
-        
+
 
         data = data[self.select_columns]
-        
-        # pca 진행
-        principalDf = self.pca_num_choice(data, 2)
+        print('모델 전처리 및 학습용 변수 선택 완료')
+        print()
+        # 표준화 진행 및 저장   
+        data = self.save_standard_transform(data)
+        print('표준화 완료')
+        print()
         
         # 모델 적합
-        kmeans = KMeans(n_clusters=k, init='k-means++', max_iter=500, random_state=0)
-        kmeans_model = kmeans.fit(principalDf[['component1', 'component2']].values)
+        kmeans = KMeans(n_clusters=k, init='k-means++', max_iter=1000, random_state=2023)
+        kmeans_model = kmeans.fit(data.values)
         
-        print(f'{len(data)} Data success train!')
+        print(f'{len(data)} 클러스터링 모델 학습 완료!')
         print()
         
         # 이상치 군집 저장
-        principalDf['kmeans_label'] = kmeans_model.fit_predict(principalDf[['component1', 'component2']].values)
-        
-        
-        outlier_k = principalDf['kmeans_label'].value_counts().index[-1]
-        print(f'outlier k = {outlier_k}')
-        
+        data['kmeans_label'] = kmeans_model.labels_
+
         print('k 별 count')
-        print(principalDf['kmeans_label'].value_counts())
+        print(data['kmeans_label'].value_counts())
         print()
-        
-        
-        # YAML 파일 경로
-        outlier_k_path = self.current_path + "train_models/kmeans_outlier_k.yaml"
-
-        
-        
-        # YAML 데이터 생성
-        yaml_data = {
-            "kmeans_outlier_k": str(outlier_k), 
-            "k" : str(k)
-        }
-
-        # YAML 파일 작성
-        with open(outlier_k_path, "w") as f:
-            yaml.safe_dump(yaml_data, f)
-        
-        print(outlier_k_path, '저장 완료')
         
         
         # kmeans 모델 저장 경로
@@ -1008,23 +1005,8 @@ class Modeling(Elk):
             pickle.dump(kmeans_model, file)
         
         print(model_path, '모델 저장 완료')
-        # Scatter plot 그리기
-        fig = px.scatter(principalDf, x='component1', y='component2', color=principalDf['kmeans_label'])
-
-
-
-        # HTML 파일로 저장
-        html_path = self.current_path + "kmeans_scatter_plot.html"
-        fig.write_html(html_path)
-        print(html_path, 'cluster plot 저장 완료')
-
-#     # 스케일러 저장 경로
-#     scaler_path = current_path  + f'{folder_path}/scaler.pkl'
-
-#     # 스케일러 저장
-#     with open(scaler_path, 'wb') as file:
-#         pickle.dump(scaler, file)
-
+        
+    
     def dbscan_modeling(self):
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
@@ -1088,20 +1070,21 @@ class Modeling(Elk):
         with open(kmeans_model_path, 'rb') as file:
             kmeans_loaded_model = pickle.load(file)
 
-        # PCA 모델 파일 경로
-        pca_model_path = f'{folder_path}/pca_model.pkl'
+#         # PCA 모델 파일 경로
+#         pca_model_path = f'{folder_path}/pca_model.pkl'
 
-        # PCA 모델 불러오기
-        with open(pca_model_path, 'rb') as file:
-            loaded_pca = pickle.load(file)
+#         # PCA 모델 불러오기
+#         with open(pca_model_path, 'rb') as file:
+#             loaded_pca = pickle.load(file)
             
-    #     # 스케일러 파일 경로
-    #     scaler_path = current_path + f'{folder_path}/scaler.pkl'
+        # 스케일러 파일 경로
+        scaler_path = f'{folder_path}/scaler.pkl'
 
-    #     # 스케일러 불러오기
-    #     with open(scaler_path, 'rb') as file:
-    #         loaded_scaler = pickle.load(file)
-        return  kmeans_loaded_model, loaded_pca
+        # 스케일러 불러오기
+        with open(scaler_path, 'rb') as file:
+            loaded_scaler = pickle.load(file)
+            
+        return  kmeans_loaded_model, loaded_scaler
     
     
     def kmeans_predict(self, data, model):
@@ -1111,22 +1094,18 @@ class Modeling(Elk):
         return cluster_label
     
     def return_labels(self, data):
-        kmeans_loaded_model, loaded_pca  = self.import_model()
+        kmeans_loaded_model, loaded_scaler  = self.import_model()
         
 
         select_data = data[self.select_columns]
         
-        
-        printcipalComponents = loaded_pca.transform(select_data)
+        scaled_data = loaded_scaler.fit_transform(select_data.values)
 
-        principalDf = pd.DataFrame(data=printcipalComponents, columns = ['component1', 'component2'])
+#         # kmean
+#         kmeans_label = 
+#         #dbscan_label = 
         
-
-        # kmean
-        kmeans_label = self.kmeans_predict(principalDf, kmeans_loaded_model)
-        #dbscan_label = 
-        
-        return kmeans_label
+#         return kmeans_label
     
     def get_kmeans_outlier_k(self):
         # YAML 파일 경로

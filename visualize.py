@@ -219,8 +219,6 @@ class Visualize:
         # 데이터 프레임에서 상관계수 계산
 
         numerical_feats = list(data.dtypes[data.dtypes != "object"].index)
-        numerical_feats.remove('접속 시간(분)')
-        numerical_feats.remove('최단 접속 간격(초)')
         correlation_matrix = data[numerical_feats].corr().round(2)
 
 
