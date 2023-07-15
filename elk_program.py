@@ -14,6 +14,7 @@ import pickle
 from elasticsearch import Elasticsearch
 from elastic_transport import ConnectionTimeout
 
+
 # 시각화
 import plotly.graph_objects as go
 import plotly.express as px
@@ -26,9 +27,11 @@ import matplotlib.cm as cm
 # 머신러닝 모델
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_samples, silhouette_score
 import statsmodels.api as sm
+from sklearn.mixture import GaussianMixture
+from sklearn.ensemble import RandomForestClassifier
 
 # 경고창 제거, 로깅
 import warnings
@@ -829,7 +832,7 @@ class Modeling(Elk):
 
 
 
-    def train_data_preprocessing(self, data):
+    def train_data_preprocessing(self):
 
 #         # 접속 시간이 0인 데이터 삭제 
 #         zero_connect_time_index = data[data['접속 시간(분)'] == 0].index
@@ -838,8 +841,20 @@ class Modeling(Elk):
 #         # 평균 접속 시간이 0인 데이터 삭제 
 #         zero_connect_count_index = data[data['평균 접속 수(1분)'] == 0.0].index
 #         data = data.drop(zero_connect_count_index)
-        
+
+        data = self.get_index_data('describe*')
+                
         data.reset_index(drop=True, inplace=True)
+        
+        print('학습용 데이터 불러오기 완료')
+
+        data = data[self.select_columns]
+        print('모델 전처리 및 학습용 변수 선택 완료')
+        print()
+        # 표준화 진행 및 저장   
+        data = self.save_standard_transform(data)
+        print('표준화 완료')
+        print()
 
         return data
 
@@ -963,28 +978,22 @@ class Modeling(Elk):
 
     def kmeans_modeling(self, k):
         
+        
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
         
+        
         # 학습용 데이터 불러오기
-        data = self.get_index_data('describe*').reset_index(drop=True)
-        print('학습용 데이터 불러오기 완료')
-        data = self.train_data_preprocessing(data)
-
-
-        data = data[self.select_columns]
-        print('모델 전처리 및 학습용 변수 선택 완료')
-        print()
-        # 표준화 진행 및 저장   
-        data = self.save_standard_transform(data)
-        print('표준화 완료')
-        print()
+        data = self.train_data_preprocessing()
         
         # 모델 적합
+        print('==== kmeans clustering model 학습을 시작합니다. =====')
         kmeans = KMeans(n_clusters=k, init='k-means++', max_iter=1000, random_state=2023)
         kmeans_model = kmeans.fit(data.values)
+        print('모델 학습 중...')
+        print()
         
-        print(f'{len(data)} 클러스터링 모델 학습 완료!')
+        print(f'kmeans clustering model 학습 완료!(data = {len(data)})')
         print()
         
         # 이상치 군집 저장
@@ -992,13 +1001,20 @@ class Modeling(Elk):
 
         print('k 별 count')
         print(data['kmeans_label'].value_counts())
+        
+        outlier_num = str(data['kmeans_label'].value_counts().index[-1])
         print()
-        
-        
+    
         # kmeans 모델 저장 경로
         model_path =  f'{folder_path}/kmeans_model.pkl'
         
+    
+        outlier_path =  f'{folder_path}/kmeans_outlier_k.yaml'
         
+        meta_data = {
+            'k': str(k),
+            'kmeans_outlier_k': outlier_num
+        }
 
         # 모델 저장
         with open(model_path, 'wb') as file:
@@ -1006,28 +1022,71 @@ class Modeling(Elk):
         
         print(model_path, '모델 저장 완료')
         
-    
-    def dbscan_modeling(self):
+  
+        # outlier 번호 저장
+        with open(outlier_path, 'w') as file:
+            yaml.dump(meta_data, file)
+
+
+    def GM_modeling(self, n_components=4, threshold=-15):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        
+        # 학습용 데이터 불러오기
+        data = self.train_data_preprocessing()
+        
+        # GMM 모델 초기화
+        n_components =  n_components # 가우시안 분포 개수
+        print(f'n_components = {n_components}')
+        
+        gmm = GaussianMixture(n_components=n_components)
+        
+        print('==== GaussianMixure model 학습을 시작합니다. =====')
+        
+        # 초기 데이터셋으로 모델 학습
+        gmm.fit(data.values)
+        print('학습 중...')
+        print()
+        print('GaussianMixture Model 학습 완료!')
+        print()
+        
+        
+        log_probs = gmm.score_samples(data.values)
+        threshold = threshold # 임계값 설정 (적절한 값으로 조정해야 함)
+        print(f'log likelihood outlier thread : {threshold}')
+        
+        data['GMM_outlier'] = np.where(log_probs < threshold, 1, 0)
+        
+        print(data['GMM_outlier'].value_counts()) 
+        
+        model_path =  f'{folder_path}/gm_model.pkl'
+        
+        # 모델 저장
+        with open(model_path, 'wb') as file:
+            pickle.dump(gmm, file)
+        
+        print(model_path, '모델 저장 완료')
+        
+        
+    def dbscan_modeling(self, eps, min_samples):
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
         
         # 학습용 데이터 불러오기
-        data = self.get_index_data('describe*').reset_index(drop=True)
+        data = self.train_data_preprocessing()
         
-        # 학습용 데이터 전처리(중복 데이터 삭제, 접속시간=0, 접속수=0 데이터 삭제)
-        data = self.train_data_preprocessing(data)
-        
-
-        data = data[self.select_columns]
-        
-        # pca 진행
-        principalDf = self.pca_num_choice(data, 2)
-        
-        scaled_data = pd.DataFrame(self.standard_transfrom(principalDf), columns=principalDf.columns)
-        
-        dbscan = DBSCAN(eps=0.3, min_samples=5).fit(scaled_data)
-
-        scaled_data['dbscan_label'] = dbscan.labels_
+        print('==== DBSCAN clustering model 학습을 시작합니다. =====')
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(data.values)
+        print('모델 학습 중...')
+      
+        print()
+        print(f'DBSCAN clustering model 학습 완료(eps={eps}, min_samples={min_samples}, data = {len(data)})')
+        print()
+        data['dbscan_label'] = dbscan.labels_
+        outlier_count = data.dbscan_label.value_counts().loc[-1]
+        print(f'outlier count : {outlier_count}')
+        print(f'outlier ratio : {round((outlier_count / data.shape[0]) * 100, 2) }%')
         
         # kmeans 모델 저장 경로
         model_path =  f'{folder_path}/dbscan_model.pkl'
@@ -1038,24 +1097,66 @@ class Modeling(Elk):
         
         print(model_path, '모델 저장 완료')
         
-        # Scatter plot 그리기
-        fig = px.scatter(scaled_data, x='component1', y='component2', color=scaled_data['dbscan_label'])
+    
+  
+        
+#         # Scatter plot 그리기
+#         fig = px.scatter(scaled_data, x='component1', y='component2', color=scaled_data['dbscan_label'])
 
 
-        # HTML 파일로 저장
-        html_path = self.current_path + "dbscan_scatter_plot.html"
-        fig.write_html(html_path)
+#         # HTML 파일로 저장
+#         html_path = self.current_path + "dbscan_scatter_plot.html"
+#         fig.write_html(html_path)
         
         
         
-        print(html_path, 'cluster plot 저장 완료')
-#         # 저장된 모델 불러오기
-#         with open('dbscan_model.pkl', 'rb') as f:
-#             loaded_dbscan = pickle.load(f)
+#         print(html_path, 'cluster plot 저장 완료')
+# #         # 저장된 모델 불러오기
+# #         with open('dbscan_model.pkl', 'rb') as f:
+# #             loaded_dbscan = pickle.load(f)
+    
+    def randomforest_modeling(self):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # 학습용 데이터 불러오기
+        data = self.train_data_preprocessing()
+        
+        #dbscan 불러오기
+        dm = self.import_dbscan_model()
+        
+        
+        data['dbscan_label'] = dm.labels_
+        data['dbscan_label'] = data['dbscan_label'].apply(lambda x : 0 if x != -1 else 1)
+        
+        
+        X = data[self.select_columns]
+        
+        y = data['dbscan_label']
+        
+        rf = RandomForestClassifier()
 
         
+        print('==== Random Forest Classifiy model 학습을 시작합니다. =====')
+        rf_model = rf.fit(X, y)
+        print('모델 학습 중...')
+      
+        print()
+        print(f'Random Forest Classifiy model 학습 완료!')
+        print()
+     
+        # kmeans 모델 저장 경로
+        model_path =  f'{folder_path}/rf_model.pkl'
+        
+        # 모델 저장
+        with open(model_path, 'wb') as f:
+            pickle.dump(rf_model , f)
+        
+        print(model_path, '모델 저장 완료')
+        
+        
 
-    def import_model(self):
+    def import_kmeans_model(self):
         
         
         folder_path = self.current_path + "train_models"
@@ -1069,6 +1170,9 @@ class Modeling(Elk):
         # 모델 불러오기
         with open(kmeans_model_path, 'rb') as file:
             kmeans_loaded_model = pickle.load(file)
+            
+        print(kmeans_model_path,'kmeans import success!')
+            
 
 #         # PCA 모델 파일 경로
 #         pca_model_path = f'{folder_path}/pca_model.pkl'
@@ -1077,21 +1181,115 @@ class Modeling(Elk):
 #         with open(pca_model_path, 'rb') as file:
 #             loaded_pca = pickle.load(file)
             
+
+        return  kmeans_loaded_model
+    
+    def import_GM_model(self):
+        
+        
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        
+        # kmeans 불러오기
+        # 모델 파일 경로
+        gm_model_path = f'{folder_path}/gm_model.pkl'
+
+        # 모델 불러오기
+        with open(gm_model_path, 'rb') as file:
+            gm_loaded_model = pickle.load(file)
+            
+        print(gm_model_path,'gmm import success!')
+            
+        return  gm_loaded_model
+    
+    def import_rf_model(self):
+        
+        
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        
+        # kmeans 불러오기
+        # 모델 파일 경로
+        rf_model_path = f'{folder_path}/rf_model.pkl'
+
+        # 모델 불러오기
+        with open(rf_model_path, 'rb') as file:
+            rf_loaded_model = pickle.load(file)
+            
+        print(rf_model_path,'Random Forest Classify Model import success!')
+            
+        return  rf_loaded_model
+
+    def import_dbscan_model(self):
+           
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # dbscan 불러오기
+        # 모델 파일 경로
+        dbscan_model_path = f'{folder_path}/dbscan_model.pkl'
+
+        # 모델 불러오기
+        with open(dbscan_model_path, 'rb') as file:
+            dbscan_loaded_model = pickle.load(file)     
+        
+        print(dbscan_model_path,'dbscan import success!')
+        
+        return dbscan_loaded_model
+    
+#       def dbscan_detect_outliers(data):
+            
+#             # 새로운 데이터를 사용하여 모델 업데이트
+#             gmm.fit(np.vstack((initial_data, data)))
+
+#             # 이상치 탐지
+#             log_probs = gmm.score_samples(data)
+#             threshold = -10.0  # 임계값 설정 (적절한 값으로 조정해야 함)
+#             outliers = np.where(log_probs < threshold)[0]
+
+#             return outliers
+    
+    def import_scaler_model(self):
+            
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
         # 스케일러 파일 경로
         scaler_path = f'{folder_path}/scaler.pkl'
 
         # 스케일러 불러오기
         with open(scaler_path, 'rb') as file:
             loaded_scaler = pickle.load(file)
-            
-        return  kmeans_loaded_model, loaded_scaler
-    
+        
+        print(scaler_path,'scaler import success!')
+        
+        return loaded_scaler
+        
+        
     
     def kmeans_predict(self, data, model):
         # # 주성분으로 이루어진 데이터 프레임 구성
         cluster_label = model.predict(data.values)
         
         return cluster_label
+    
+    
+    def rf_predict(self, data, model):
+        # # 주성분으로 이루어진 데이터 프레임 구성
+        cluster_label = model.predict(data.values)
+        
+        return cluster_label
+    
+    
+    def gmm_predict(self, data, model):
+        log_probs = model.score_samples(data.values)
+        threshold = -15 # 임계값 설정 (적절한 값으로 조정해야 함)
+        
+        outlier_label = np.where(log_probs < threshold, 1, 0)
+        
+        return outlier_label
     
     def return_labels(self, data):
         kmeans_loaded_model, loaded_scaler  = self.import_model()

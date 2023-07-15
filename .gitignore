@@ -16,3 +16,4 @@ logs
 *.log
 docker_images
 flask_project
+results
