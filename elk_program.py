@@ -32,6 +32,7 @@ from sklearn.metrics import silhouette_samples, silhouette_score
 import statsmodels.api as sm
 from sklearn.mixture import GaussianMixture
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import IsolationForest
 
 # 경고창 제거, 로깅
 import warnings
@@ -193,7 +194,10 @@ class Elk:
 
     def get_pass_block_dev_list(self):
         block_list = self.get_sDevID("차단", 1, '30m')
-        pass_list = self.get_sDevID('허용', 5000, '30m')
+        self.get_sDevID_random("1m")
+        pass_list = self.get_sDevID('허용', 500, '30m')
+        pass_list = random.sample(pass_list, 100)
+        # random_list = self.get_sDevID_random('30m')
         
         total_dev_list = list(set(block_list + pass_list))
         
@@ -253,7 +257,7 @@ class Elk:
             }
         )
         
-        # 상위 50개의 sDevID 추출
+        # 상위 100개의 sDevID 추출
         buckets = res["aggregations"]["top_100_devid"]["buckets"]
         top_100_devid_list = [bucket["key"] for bucket in buckets]
         
@@ -357,7 +361,7 @@ class Elk:
                         "filter": [
                             {
                                 "match": {
-                                    column_name : match_keyword  # 해당 유저의 아이디로 필터링
+                                    column_name : match_keyword  # 
                                 }
                             },
                             {
@@ -445,7 +449,7 @@ class Elk:
         duration_mean = round(data['duration'].mean(), 2)
         # duration_mean = str(duration_mean) + "초"
 
-        duration_min = round(data['duration'].min(), 2)
+        # duration_min = round(data['duration'].min(), 2)
         # duration_min = str(duration_min) + "초"
 
         duration_max = round(data['duration'].max(), 2)
@@ -464,6 +468,10 @@ class Elk:
         # 최다 접속 URL
         main_url = data['sHost'].value_counts().index[0]
         
+        # 최다 접속 IP 주소
+        main_ip = data['uDstIp'].value_counts().index[0]
+        
+        main_ip_country = self.get_geolocation(main_ip)[0]
         
             
         # 평균 접속 수(1분)
@@ -506,15 +514,15 @@ class Elk:
         
         # 최대 빈도 URL 접속 횟수 
         max_frequent_url_connect_count = data['sHost'].value_counts()[0]
-        decribe_list = [data['sDevID'][0],connect_count,  mean_connect_url_count, block_count,  block_ratio, duration_mean, duration_max, duration_min, 
-                        connect_url_count, succession_url_connect_count, main_url,
+        decribe_list = [data['sDevID'][0],connect_count,  mean_connect_url_count, block_count,  block_ratio, duration_mean, duration_max, 
+                        connect_url_count, succession_url_connect_count, main_url, main_ip, main_ip_country,
                         max_frequent_url_connect_count,connect_ua_count, main_ua, main_ua_connect_count
                         ,connect_date, connect_duration, connect_minutes, 
                     mean_packet_lenth,  main_port]
         
         
-        column_lists = ['가입자 ID','전체 접속 횟수', '평균 접속 수(1분)','차단 수', '차단율(%)','평균 접속 간격(초)', '최장 접속 간격(초)', '최단 접속 간격(초)', '고유 접속 URL 수', '최대 연속 URL 접속 횟수', 
-                    '최다 접속 URL', '최대 빈도 URL 접속 횟수' ,'접속 UA 수', '최다 이용 UA', 
+        column_lists = ['가입자 ID','전체 접속 횟수', '평균 접속 수(1분)','차단 수', '차단율(%)','평균 접속 간격(초)', '최장 접속 간격(초)', '고유 접속 URL 수', '최대 연속 URL 접속 횟수', 
+                    '최다 접속 URL', '최다 접속 IP','최다 접속 IP 위치', '최대 빈도 URL 접속 횟수' ,'접속 UA 수', '최다 이용 UA', 
                         '최다 이용 UA 접속 수' ,'접속 일자', '접속 기간', '접속 시간(분)', '평균 패킷 길이', 
                     '최다 접속 포트 번호']
         describe_data  = pd.DataFrame([decribe_list], columns=column_lists)
@@ -570,7 +578,23 @@ class Elk:
         
         return merged_unique_data, categoty_segment_data
 
+    
+    def seasonal_decompose_values(self, data, period=5):
+
+        data['date_group_minute'] = data['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+
+        # 데이터를 시간적으로 그룹화하여 그룹별 통계 계산
+        grouped_data = data.groupby('date_group_minute')[['sHost']].count()
+
+        result = sm.tsa.seasonal_decompose(grouped_data['sHost'], model='additive', period=period)
+
+        original_values = grouped_data['sHost'].values
+        trend_values = result.trend.values
+        seasonal_values = result.seasonal.values
+        residual_values = result.resid.values
         
+        
+        return seasonal_values
 
 
     # 5) 기타 데이터 추가용도
@@ -623,12 +647,16 @@ class Elk:
         describe_url_df[['country', 'regionName', 'city']] = ip_location_list
         
         return describe_url_df
-
+    
+    
 
     # 랜덤 가입자 집계 데이터 저장 
     def save_db_random_devid(self):
+        block_list = self.get_sDevID("차단", 1, '30m')
         sDevID_list = self.get_sDevID_random("1m")
-        for dev_id in sDevID_list:
+        
+        total_dev_list = list(set(block_list + sDevID_list))
+        for dev_id in total_dev_list:
             try:
                 dec_data = self.get_final_dec_data_dev_id(dev_id)
                 # 데이터프레임을 Elasticsearch 문서 형식으로 변환
@@ -1048,7 +1076,7 @@ class Modeling(Elk):
         gmm.fit(data.values)
         print('학습 중...')
         print()
-        print('GaussianMixture Model 학습 완료!')
+        print(f'GaussianMixture Model 학습 완료! data = {len(data)})')
         print()
         
         
@@ -1069,7 +1097,7 @@ class Modeling(Elk):
         print(model_path, '모델 저장 완료')
         
         
-    def dbscan_modeling(self, eps, min_samples):
+    def dbscan_modeling(self, eps=1, min_samples=3):
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
         
@@ -1134,7 +1162,7 @@ class Modeling(Elk):
         
         y = data['dbscan_label']
         
-        rf = RandomForestClassifier()
+        rf = RandomForestClassifier(random_state=2021)
 
         
         print('==== Random Forest Classifiy model 학습을 시작합니다. =====')
@@ -1142,7 +1170,7 @@ class Modeling(Elk):
         print('모델 학습 중...')
       
         print()
-        print(f'Random Forest Classifiy model 학습 완료!')
+        print(f'Random Forest Classifiy model 학습 완료! data = {len(data)})')
         print()
      
         # kmeans 모델 저장 경로
@@ -1150,12 +1178,54 @@ class Modeling(Elk):
         
         # 모델 저장
         with open(model_path, 'wb') as f:
-            pickle.dump(rf_model , f)
+            pickle.dump(rf_model , f,  protocol=pickle.HIGHEST_PROTOCOL)
         
         print(model_path, '모델 저장 완료')
         
         
-
+    def isolateforest_modeling(self, max_samples=100, contamination = 0.01):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # 학습용 데이터 불러오기
+        data = self.train_data_preprocessing()
+        
+        print('==== Isolation Forest model 학습을 시작합니다. =====')
+        isof = IsolationForest(max_samples=max_samples, contamination = contamination, random_state=42)
+        isof_model = isof.fit(data.values)
+        print('모델 학습 중...')
+        print()
+        
+        
+        
+        print(f'Isolation Forest model  학습 완료(max_samples={max_samples}, contamination = {contamination}, data = {len(data)})')
+        print()
+        
+        # kmeans 모델 저장 경로
+        model_path =  f'{folder_path}/isof_model.pkl'
+        
+        
+        data['isof_label'] = isof_model.predict(data.values)
+        print(data['isof_label'].value_counts())
+        outlier_count = data.isof_label.value_counts().loc[-1]
+        print(f'outlier count : {outlier_count}')
+        print(f'outlier ratio : {round((outlier_count / data.shape[0]) * 100, 2) }%')
+        
+        # 모델 저장
+        with open(model_path, 'wb') as f:
+            pickle.dump(isof_model , f,  protocol=pickle.HIGHEST_PROTOCOL)
+        
+        print(model_path, '모델 저장 완료')
+        
+    def total_modeling(self):
+        self.kmeans_modeling(k=4)
+        self.dbscan_modeling(eps=1, min_samples=3)
+        self.randomforest_modeling()
+        self.isolateforest_modeling(max_samples=100, contamination = 0.01)
+        
+        print('모델 업데이트 완료')
+        
+    
     def import_kmeans_model(self):
         
         
@@ -1204,23 +1274,19 @@ class Modeling(Elk):
         return  gm_loaded_model
     
     def import_rf_model(self):
-        
-        
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
-        
-        
-        # kmeans 불러오기
-        # 모델 파일 경로
+
+        # RandomForest 모델 파일 경로
         rf_model_path = f'{folder_path}/rf_model.pkl'
 
         # 모델 불러오기
         with open(rf_model_path, 'rb') as file:
             rf_loaded_model = pickle.load(file)
-            
-        print(rf_model_path,'Random Forest Classify Model import success!')
-            
-        return  rf_loaded_model
+
+        print(rf_model_path, 'Random Forest Classify Model import success!')
+
+        return rf_loaded_model
 
     def import_dbscan_model(self):
            
@@ -1250,6 +1316,22 @@ class Modeling(Elk):
 #             outliers = np.where(log_probs < threshold)[0]
 
 #             return outliers
+    def import_isof_model(self):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+      
+        # 모델 파일 경로
+        isof_model_path = f'{folder_path}/isof_model.pkl'
+
+        # 모델 불러오기
+        with open(isof_model_path, 'rb') as file:
+            isof_loaded_model = pickle.load(file)     
+        
+        print(isof_model_path,'Isolation Forest Model import success!')
+        
+        return isof_loaded_model
+        
+        
     
     def import_scaler_model(self):
             
@@ -1269,41 +1351,34 @@ class Modeling(Elk):
         
         
     
-    def kmeans_predict(self, data, model):
-        # # 주성분으로 이루어진 데이터 프레임 구성
-        cluster_label = model.predict(data.values)
-        
-        return cluster_label
-    
-    
-    def rf_predict(self, data, model):
-        # # 주성분으로 이루어진 데이터 프레임 구성
-        cluster_label = model.predict(data.values)
-        
-        return cluster_label
-    
     
     def gmm_predict(self, data, model):
-        log_probs = model.score_samples(data.values)
+        log_probs = model.score_samples(data)
         threshold = -15 # 임계값 설정 (적절한 값으로 조정해야 함)
         
         outlier_label = np.where(log_probs < threshold, 1, 0)
         
         return outlier_label
     
-    def return_labels(self, data):
-        kmeans_loaded_model, loaded_scaler  = self.import_model()
+    def return_labels(self, data, model_list):
+   
+        select_data = data[self.select_columns]    
+        scaled_data = model_list[4].transform(select_data.values)
         
-
-        select_data = data[self.select_columns]
+        # kmean
+        kmeans_label = model_list[0].predict(scaled_data)[0]
+     
+        #randomforest
+        rf_label =  model_list[1].predict(scaled_data)[0]
+    
+        # gmm
+        gm_label =  self.gmm_predict(scaled_data, model_list[2])[0]
         
-        scaled_data = loaded_scaler.fit_transform(select_data.values)
-
-#         # kmean
-#         kmeans_label = 
-#         #dbscan_label = 
-        
-#         return kmeans_label
+        # isolation forest
+        isof_label = model_list[3].predict(scaled_data)[0]
+   
+        return kmeans_label, rf_label, gm_label, isof_label
+    
     
     def get_kmeans_outlier_k(self):
         # YAML 파일 경로
@@ -1322,7 +1397,12 @@ class Modeling(Elk):
 
 
     def rule_based_modeling(self, dec_data, dev_id):
-        if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["차단 수"].values >= 50 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 90 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 90:
+        if dec_data['접속 시간(분)'].values <= 10 or dec_data['평균 접속 수(1분)'].values <= 1:
+            self.logger.info(f"{dev_id} : information short(접속시간 < 10분 or 평균 접속 수 = 0)")
+            return
+        
+        
+        if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["차단 수"].values >= 5 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 90 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 90:
             self.logger.info(f"{dev_id} : Rule 1 matched!")
             self.save_db_data(dec_data, "abnormal_describe")
             return 
@@ -1332,31 +1412,39 @@ class Modeling(Elk):
             return
 
 
-    def return_total_label_to_elasticsearch(self, dev_id):
+    def return_total_label_to_elasticsearch(self, dev_id, model_list):
         
         # kmeams outlier 
         kmeans_outlier_k = self.get_kmeans_outlier_k()
         
-        
-        dbscan_outlier_k = -1
         
         dec_data = self.get_final_dec_data_dev_id(dev_id)    
         
         # rule based model 
         self.rule_based_modeling(dec_data, dev_id)
         
-        
         # kmeans 
-        kmeans_label = self.return_labels(dec_data)[0]
+        kmeans_label, rf_label, gm_label, isof_label = self.return_labels(dec_data, model_list)
         
         
-        if kmeans_label == kmeans_outlier_k:
-            self.logger.info(f"{dev_id}(label = {kmeans_outlier_k}) : Rule 3 matched!(kmeans)")
+        if kmeans_label == kmeans_outlier_k or rf_label == 1 or gm_label == 1 or isof_label == -1:
+            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}) : Rule 3 matched!")
             self.save_db_data(dec_data, "abnormal_describe")
-            return 
-        # dbscn
-        self.logger.info(f"{dev_id}(label = {kmeans_label}) : Normal User")
+            return  
+    
+        self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}) : Normal User")
                
+    def total_model_load(self):
+        kmeans_loaded_model = self.import_kmeans_model()
+        gm_loaded_model = self.import_GM_model()
+        rf_loaded_model = self.import_rf_model()
+        isof_loaded_model = self.import_isof_model()
+        loaded_scaler  = self.import_scaler_model()
+        
+        
+        model_list = [kmeans_loaded_model, rf_loaded_model, gm_loaded_model, isof_loaded_model, loaded_scaler]
+    
+        return model_list
 
     def process(self):
         # 랜덤 샘플링 버전
@@ -1364,10 +1452,13 @@ class Modeling(Elk):
 
         # 허용 block 혼합 버전
         dev_id_list = self.get_pass_block_dev_list()
-
+        
+        # 모델 로드
+        model_list = self.total_model_load()
+        
 
         for dev_id in dev_id_list:
-            self.return_total_label_to_elasticsearch(dev_id)
+            self.return_total_label_to_elasticsearch(dev_id, model_list)
 
 # 데이터를 로드하고 전처리한 후 X에 저장
 # 최대 클러스터 개수 설정
