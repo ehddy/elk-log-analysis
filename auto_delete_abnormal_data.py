@@ -5,4 +5,4 @@ from elk_program import *
 
 app = Elk()
 
-app.delete_old_indices('abnormal_describe', 2)
+app.delete_old_indices('abnormal_describe', 1)

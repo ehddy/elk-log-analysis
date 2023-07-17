@@ -10,7 +10,7 @@ def run_scheduler():
     model.process()
 
     # 1시간마다 get_db() 함수를 실행하는 스케줄러 함수입니다.
-    schedule.every(10).minutes.do(model.process)
+    schedule.every(0.5).minutes.do(model.process)
 
     while True:
         schedule.run_pending()

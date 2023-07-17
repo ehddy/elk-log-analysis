@@ -17,3 +17,4 @@ logs
 docker_images
 flask_project
 results
+*.tar

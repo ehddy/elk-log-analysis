@@ -47,10 +47,10 @@ class Elk:
         now = datetime.now()
         # 한국 시간대로 변환
         korea_timezone = pytz.timezone("Asia/Seoul")
-        korea_time = now.astimezone(korea_timezone)
+        self.korea_time = now.astimezone(korea_timezone)
 
         # 날짜 문자열 추출
-        self.korea_date = korea_time.strftime("%Y-%m-%d")
+        self.korea_date = self.korea_time.strftime("%Y-%m-%d")
 
 
         self.current_path = os.getcwd() + "/"
@@ -204,7 +204,7 @@ class Elk:
         return total_dev_list
 
     # 키워드 기준으로 가입자 추출(100명)
-    def get_keywords_match_devid_100(self, column_name, match_keywords): 
+    def get_keywords_match_devid(self, column_name, match_keywords, time_choice, random_option=False): 
         wildcard_queries = []
         for keyword in match_keywords:
             wildcard_query = {
@@ -236,7 +236,7 @@ class Elk:
                             {
                                 "range": {
                                     "@timestamp": {
-                                        "gte": "now-1h",
+                                        "gte": f"now-{time_choice}",
                                         "lt": "now"
                                     }
                                 }
@@ -246,10 +246,10 @@ class Elk:
                 },
                 "size": 0,  # 집계된 결과만 가져옴
                 "aggs": {
-                    "top_100_devid": {
+                    "top_devid": {
                         "terms": {
                             "field": "sDevID.keyword",
-                            "size": 100,
+                            "size": 10000,
                             "order": {"_count": "desc"}
                         }
                     }
@@ -257,11 +257,17 @@ class Elk:
             }
         )
         
-        # 상위 100개의 sDevID 추출
-        buckets = res["aggregations"]["top_100_devid"]["buckets"]
-        top_100_devid_list = [bucket["key"] for bucket in buckets]
+        buckets = res["aggregations"]["top_devid"]["buckets"]
+        devid_list = [bucket["key"] for bucket in buckets]
         
-        return top_100_devid_list
+        if random_option == True:
+
+            # 랜덤 추출
+            devid_list = random.sample(devid_list, 100)
+        else:
+            # 빈도순
+            devid_list = devid_list[:100]
+        return devid_list
 
     # Elasticsearch에서 데이터 추철
 
@@ -403,8 +409,7 @@ class Elk:
     def get_final_dec_data_dev_id(self,dev_id):
         dev_data = self.get_sDevID_data(dev_id)
         scaled_data = self.preprocessing_data(dev_data)
-        new_data = self.add_new_columns(scaled_data)
-        dec_data = self.describe(new_data)
+        dec_data = self.describe(scaled_data)
         
         return dec_data
 
@@ -417,8 +422,7 @@ class Elk:
         for dev_id in sDevID_list:
             data = self.get_sDevID_data(dev_id)
             scaled_data = self.preprocessing_data(data)
-            new_data = self.add_new_columns(scaled_data)
-            total_df_list.append(new_data)
+            total_df_list.append(scaled_data)
             self.save_csv(new_data, dev_id)
         
         return total_df_list
@@ -560,8 +564,7 @@ class Elk:
         unique_describe = []
         for name in unique_list:
             category_data = data.loc[data[column_name] == name, :]
-            new_category_data = self.add_new_columns(category_data)
-            categoty_segment_data.append(new_category_data)
+            categoty_segment_data.append(category_data)
             dec = self.describe(new_category_data)
             dec[column_name] = name
             unique_describe.append(dec)
@@ -605,7 +608,7 @@ class Elk:
         
         for keyword in keywords:
             keyword_counts[keyword] = data[column_name].str.contains(keyword, case=False).sum()
-        
+            
         keyword_df = pd.DataFrame({'Keyword': list(keyword_counts.keys()), 'Frequency': list(keyword_counts.values())})
         keyword_df['Percentage'] = (keyword_df['Frequency'] / len(data)) * 100
         keyword_df = keyword_df.sort_values('Frequency', ascending=False)
@@ -659,6 +662,11 @@ class Elk:
         for dev_id in total_dev_list:
             try:
                 dec_data = self.get_final_dec_data_dev_id(dev_id)
+                
+                if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1:
+                    self.logger.info(f"not save {dev_id} data(index name : {index_name}, information short)")
+                    continue
+                
                 # 데이터프레임을 Elasticsearch 문서 형식으로 변환
                 index_name =  'describe'
                 self.save_db_data(dec_data, index_name)
@@ -678,39 +686,57 @@ class Elk:
         index_name = f'{index_name}-{self.korea_date}'  # 저장할 인덱스 이름
         for doc in documents:
             self.es.index(index=index_name, body=doc)
-            
+    
+    
+    def preprocessing_keywords_match_data(self,  dev, keyword_lists):
+        dev_data = self.get_sDevID_data(dev)
+        scaled_data = self.preprocessing_data(dev_data)
 
-    # 여러 keyword별 top 100 가입자의 데이터를 elasticsearch에 저장 
+
+        # 키워드가 포함된 행 필터링
+        host_counts = scaled_data[scaled_data['sHost'].str.contains('|'.join(keyword_lists))].count()[0]
+
+        # 키워드 포함 행이 전체 행중에서 차지하는 비율 
+        ratio = round((host_counts / scaled_data.count()[0]) * 100,2)
+
+
+        # 가장 높은 빈도의 키워드, 빈도, 해당 키워드 비율 
+        top_keyword, top_frequency, top_percentage = self.get_top_keyword_frequency(scaled_data, 'sHost', keyword_lists)
+
+        dec_data = self.describe(scaled_data)
+
+        dec_data['카테고리 URL 접속 수'] = host_counts
+        dec_data['카테고리 URL 접속 비율(%)'] = ratio
+        dec_data['최다 빈도 키워드'] = top_keyword
+        dec_data['최다 빈도 키워드 포함 URL 접속 수'] = top_frequency
+        dec_data['최다 빈도 키워드 비율(%)'] = top_percentage
+        
+        return dec_data
+
+    
+
+    # 여러 keyword별 가입자의 데이터를 elasticsearch에 저장 
     def save_keywords_match_data(self, keyword_lists, category_name):
-        dev_id = self.get_keywords_match_devid_100('sHost', keyword_lists)
+        # 랜덤으로 추출
+        dev_id = self.get_keywords_match_devid('sHost', keyword_lists, '10m', random_option=True)
+    
         for dev in dev_id:
-            dev_data = self.get_sDevID_data(dev)
-            dev_data = self.preprocessing_data(dev_data)
-            new_data = self.add_new_columns(dev_data)
+            try:
+                dec_data = self.preprocessing_keywords_match_data(dev, keyword_lists)
 
-            
-            # 키워드가 포함된 행 필터링
-            host_counts = new_data[new_data['sHost'].str.contains('|'.join(keyword_lists))].count()[0]
-            
-            # 키워드 포함 행이 전체 행중에서 차지하는 비율 
-            ratio = round((host_counts / new_data.count()[0]) * 100,2)
-            
-            
-            # 가장 높은 빈도의 키워드, 빈도, 해당 키워드 비율 
-            top_keyword, top_frequency, top_percentage = get_top_keyword_frequency(new_data, 'sHost', keyword_lists)
-            
-            dec_data = self.describe(new_data)
-            
-            dec_data['카테고리'] = category_name
-            dec_data['카테고리 URL 접속 수'] = host_counts
-            dec_data['카테고리 URL 접속 비율(%)'] = ratio
-            dec_data['최다 빈도 키워드'] = top_keyword
-            dec_data['최다 빈도 키워드 포함 URL 접속 수'] = top_frequency
-            dec_data['최다 빈도 키워드 비율(%)'] = top_percentage
-            
-            
-            self.save_db_data(dec_data, f"{category_name}-describe")
-
+                # 해당 카테고리가 전체 URL 접속 비율에서 20% 이상 차지해야 저장
+                if dec_data['카테고리 URL 접속 비율(%)'].values < 20:
+                    self.logger.info(f"not save {dev} data(index name : {category_name}, < 20%)")
+                 
+                elif dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1:
+                    self.logger.info(f"not save {dev} data(index name : {category_name}, information short)")
+                else:
+                    self.save_db_data(dec_data, f"{category_name}-describe")
+                    self.logger.info(f"save success {dev} data(index name : {category_name})")
+                    
+            except Exception as e:
+                self.logger.error(e)
+                continue
     # 2) csv로 저장
         
     def save_csv(self, data, user_id):
@@ -756,13 +782,6 @@ class Elk:
         # 데이터프레임의 로그 기록 시간을 인덱스로 설정
         data.set_index('@timestamp', inplace=True)
         
-        return data 
-
-
-
-    # 새로운 열 추가     
-    def add_new_columns(self, data):
-        
         data.reset_index(inplace=True)
         data['duration'] = data['timestamp'].diff().dt.total_seconds().round(3)
         
@@ -795,6 +814,8 @@ class Elk:
         return data 
 
 
+
+
     # 인덱스 자동 삭제
     def delete_old_indices(self, index_prefix, num_days_to_keep):
 
@@ -805,6 +826,8 @@ class Elk:
 
         # 삭제할 인덱스 이름 리스트 생성
         indices_to_delete = [index for index in self.es.indices.get(index=f"{index_prefix}-*") if index < f"{index_prefix}-{delete_date_str}"]
+        
+        print(indices_to_delete)
         
         
         # 인덱스 삭제
@@ -1126,8 +1149,6 @@ class Modeling(Elk):
         print(model_path, '모델 저장 완료')
         
     
-  
-        
 #         # Scatter plot 그리기
 #         fig = px.scatter(scaled_data, x='component1', y='component2', color=scaled_data['dbscan_label'])
 
@@ -1397,17 +1418,27 @@ class Modeling(Elk):
 
 
     def rule_based_modeling(self, dec_data, dev_id):
-        if dec_data['접속 시간(분)'].values <= 10 or dec_data['평균 접속 수(1분)'].values <= 1:
+        if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1:
             self.logger.info(f"{dev_id} : information short(접속시간 < 10분 or 평균 접속 수 = 0)")
             return
         
+        if dec_data["차단 수"].values >= 10 or dec_data["차단율(%)"].values >= 50:
+            self.logger.info(f"{dev_id} : Anomaly Rule matched!")
+            dec_data["판별 등급"] = '위험'
+            dec_data["판별 요인"] = 'Rule'
+            self.save_db_data(dec_data, "abnormal_describe")
         
-        if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["차단 수"].values >= 5 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 90 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 90:
-            self.logger.info(f"{dev_id} : Rule 1 matched!")
+        if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 95 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 95:
+            self.logger.info(f"{dev_id} : Anomaly Rule matched!")
+            dec_data["판별 등급"] = '의심'
+            dec_data["판별 요인"] = 'Rule'
             self.save_db_data(dec_data, "abnormal_describe")
             return 
-        elif dec_data["최다 접속 URL"].values == "123.57.193.95" or dec_data["최다 접속 URL"].values == "123.57.193.52":
-            self.logger.info(f"{dev_id} : Rule 2 matched!")
+        
+        if dec_data["최다 접속 URL"].values == "123.57.193.95" or dec_data["최다 접속 URL"].values == "123.57.193.52":
+            self.logger.info(f"{dev_id} : Anomaly Rule matched!")
+            dec_data["판별 등급"] = '위험'
+            dec_data["판별 요인"] = 'Rule'
             self.save_db_data(dec_data, "abnormal_describe")
             return
 
@@ -1426,9 +1457,30 @@ class Modeling(Elk):
         # kmeans 
         kmeans_label, rf_label, gm_label, isof_label = self.return_labels(dec_data, model_list)
         
+        outlier_count = 0
         
-        if kmeans_label == kmeans_outlier_k or rf_label == 1 or gm_label == 1 or isof_label == -1:
-            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}) : Rule 3 matched!")
+        if kmeans_label == kmeans_outlier_k:
+            outlier_count += 1
+            
+        if rf_label == 1:
+            outlier_count += 1
+        if gm_label == 1:
+            outlier_count += 1
+        
+        if isof_label == -1:
+            outlier_count += 1
+            
+        if outlier_count == 4:
+            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}, detect_count = {outlier_count}) : Model Detection matched!")
+            dec_data["판별 등급"] = '위험'
+            dec_data["판별 요인"] = 'ML Model'
+            self.save_db_data(dec_data, "abnormal_describe")
+            return  
+        
+        elif outlier_count >= 2:
+            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}, detect_count = {outlier_count}) : Model Detection matched!")
+            dec_data["판별 등급"] = '의심'
+            dec_data["판별 요인"] = 'ML Model'
             self.save_db_data(dec_data, "abnormal_describe")
             return  
     
@@ -1598,11 +1650,9 @@ class Modeling(Elk):
 
     def get_device_id_dash(self, dev_id):
         dev_data = self.get_sDevID_data(dev_id)
-        scaled_data = self.preprocessing_data(dev_data)
-        data = self.add_new_columns(scaled_data)
+        data = self.preprocessing_data(dev_data)
         describe_data = self.describe(data)
-        return_label = self.return_labels(describe_data)
-        labels_df = pd.DataFrame(return_label, columns=["label"])
+    
         
         user_name = describe_data['가입자 ID'][0]
         ip_describe = self.get_ip_describe(data)
@@ -1616,7 +1666,7 @@ class Modeling(Elk):
             [None, None, None, None],
             [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
             [None, None, None, None],
-            [{'type': 'indicator', 'colspan' : 2, 'rowspan': 2}, None, {'type': 'indicator', 'colspan' : 2, 'rowspan': 2}, None], 
+            [{'type': 'indicator', 'colspan' : 2, 'rowspan': 4}, None, None, None], 
             [None, None, None, None],     
         ]
         
@@ -1639,7 +1689,6 @@ class Modeling(Elk):
         fig11 = v.value_counts_top10_bar(data, 'sUA')
         fig12 = v.seasonal_decompose_plot(data, period=5)
         fig13 = v.ip_location_table(ip_describe)
-        fig14 = v.text_chart(labels_df, 'label')
 
         # 대시보드 그래프 배열
         fig = make_subplots(
@@ -1680,7 +1729,6 @@ class Modeling(Elk):
         fig.add_trace(fig12.data[0], row=3, col=1)
         fig.add_trace(fig12.data[2], row=5, col=1)
         fig.add_trace(fig13.data[0], row=7, col=1)
-        fig.add_trace(fig14.data[0], row=7, col=3)
 
         # fig.add_trace(fig12.data[1], row=6, col=1)
         # fig.add_trace(fig12.data[2], row=7, col=1)
