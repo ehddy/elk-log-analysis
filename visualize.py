@@ -3,6 +3,7 @@ import plotly.figure_factory as ff
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 import plotly.subplots as sp
 import statsmodels.api as sm
 import warnings
@@ -196,13 +197,12 @@ class Visualize:
     def value_counts_top10_bar_reverse(self, data, column_name):
         # 데이터셋의 'sHost' 열 값 빈도수 계산
         top_hosts = data[column_name].value_counts()[:10]
-        
-
+        # top_hosts = top_hosts.index.str.slice(0, 20)
         # 시리즈 객체 순서 반전
         top_hosts = top_hosts[::-1]
 
         # 가로 바 차트 생성
-        fig = go.Figure(data=[go.Bar(y=top_hosts.index, x=top_hosts.values, orientation='h')])
+        fig = go.Figure(data=[go.Bar(y=[host[:20] + ' ' for host in top_hosts.index], x=top_hosts.values, orientation='h')])
 
         # 차트 레이아웃 설정
         fig.update_layout(
@@ -350,11 +350,16 @@ class Visualize:
         # 플롯 생성
         fig = go.Figure()
 
+        if column_name == '전체 접속 횟수':
+            title = '접속 수(' + describe_data['접속 기간'][0] + ')'
+        else:
+            title = column_name
+
         # 특정 값 표시
         fig.add_trace(go.Indicator(
         mode="number",
         value=value,
-        title=column_name,
+        title=title,
         ))
 
         
@@ -394,3 +399,215 @@ class Visualize:
 
         return fig
 
+
+    def get_dash_gage(self, describe_data):  
+        user_name = describe_data['가입자 ID'][0]
+        
+        specs = [
+            [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
+            [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}]
+        ]
+        
+        font_family = 'Pretendard Black, sans-serif'
+
+
+
+        # {'type': 'xy', 'colspan': 2}, None,
+        fig1 = self.gage_chart(describe_data, '차단율(%)')
+        fig2 = self.gage_chart(describe_data, '최대 빈도 URL 접속 비율(%)')
+        fig3 = self.gage_chart(describe_data, '최다 이용 UA 접속 비율(%)')
+        fig4 = self.gage_chart(describe_data, '접속 횟수 대비 고유 URL 비율(%)')
+        fig6 = self.text_chart(describe_data, '전체 접속 횟수')
+        fig7 = self.text_chart(describe_data, '평균 접속 수(1분)')
+        fig8 = self.text_chart(describe_data, '평균 접속 간격(초)')
+        fig9 = self.text_chart(describe_data, '접속 UA 수')
+
+
+        # 대시보드 그래프 배열
+        fig = make_subplots(
+            rows=2, cols=4,
+            vertical_spacing=0.2,
+            horizontal_spacing=0.2, 
+            specs=specs,  # 그래프 간의 수직 간격 조정
+           
+        )
+
+
+        # 그래프에 폰트 적용
+        fig.update_layout(
+            font=dict(family=font_family)
+        )
+
+        #   # Reduce the graph size
+        # fig.update_layout(
+        #     height=1000,  # Set the height of the entire layout
+        #     width=1000,   # Set the width of the entire layout
+        # )
+
+        # Reduce the text size
+        fig.update_traces(
+            textfont=dict(size=10),  # Adjust the font size of the text on the graphs
+        )
+
+        fig.add_trace(fig1.data[0], row=2, col=1)
+        fig.add_trace(fig2.data[0], row=2, col=2)
+        fig.add_trace(fig3.data[0], row=2, col=3)
+        fig.add_trace(fig4.data[0], row=2, col=4)
+        fig.add_trace(fig6.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig7.data[0], row=1, col=2)  # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig8.data[0], row=1, col=3)  # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig9.data[0], row=1, col=4)  # colspan을 사용하여 두 개의 열 차지
+
+
+        # # 표 레이아웃 설정
+        # fig.update_layout(
+        #     title={
+        #         'text': f"<{user_name}> Status in the Last 1 Hour",
+        #         'font': {'size': 20, 'family': font_family}
+        #     },
+        # )
+
+        return fig 
+
+
+    def get_dash_ipchart(self, data):
+        specs = [
+            [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
+            [None, None, None, None],
+        ]
+        
+        font_family = 'Pretendard Black, sans-serif'
+
+        fig10 = self.value_counts_top10_bar(data, 'sHost')
+        fig11 = self.value_counts_top10_bar(data, 'uDstIp')
+
+        # 대시보드 그래프 배열
+        fig = make_subplots(
+            rows=2, cols=4,
+            vertical_spacing=0.1,
+            horizontal_spacing=0.1, 
+            specs=specs,  # 그래프 간의 수직 간격 조정
+            subplot_titles=['Top 10 URL', 'Top 10 IP Address']
+        )
+
+        fig10.data[0]['showlegend'] = False
+        fig11.data[0]['showlegend'] = False
+
+
+        fig10.data[0]['marker']['color'] = '#7b68ee'
+        fig11.data[0]['marker']['color'] = '#7b68ee'
+
+        # 그래프에 폰트 적용
+        fig.update_layout(
+            font=dict(family=font_family)
+        )
+
+      # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig10.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig11.data[0], row=1, col=3)  # colspan을 사용하여 두 개의 열 차지
+
+        fig.update_layout(template='none')
+
+        return fig 
+
+    def get_dash_seasonal(self, data):
+        specs = [
+            [{'type': 'xy', 'colspan': 4, 'rowspan': 2}, None, None, None],
+            [None, None, None, None],
+            [{'type': 'xy', 'colspan': 4, 'rowspan': 2}, None, None, None],
+            [None, None, None, None]
+        ]
+        
+        font_family = 'Pretendard Black, sans-serif'
+
+
+
+        fig12 = self.seasonal_decompose_plot(data, period=5)
+  
+
+        # 대시보드 그래프 배열
+        fig = make_subplots(
+            rows=4, cols=4,
+            vertical_spacing=0.2,
+            horizontal_spacing=0.2, 
+            specs=specs,  # 그래프 간의 수직 간격 조정
+            subplot_titles=['Connect Pattern', '', '', '',]        )
+
+        fig12.data[0]['showlegend'] = False
+        fig12.data[2]['showlegend'] = False
+
+        fig12.data[0]['marker']['color'] = '#ff009f'
+        fig12.data[2]['marker']['color'] = '#dda0dd'
+
+        # 그래프에 폰트 적용
+        fig.update_layout(
+            font=dict(family=font_family)
+        )
+         # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig12.data[0], row=1, col=1)
+        fig.add_trace(fig12.data[2], row=3, col=1)
+
+        # fig.add_trace(fig12.data[1], row=6, col=1)
+        # fig.add_trace(fig12.data[2], row=7, col=1)
+        # fig.add_trace(fig12.data[3], row=8, col=1)
+
+
+        # 특정 그래프의 Y 축 제목 설정
+        fig.update_yaxes(title_text='Original', title_font=dict(size=15), row=1, col=1)
+        fig.update_yaxes(title_text='Seasonality', title_font=dict(size=15), row=3, col=1)
+
+
+        fig.update_layout(template='none')
+
+        return fig
+
+
+    def get_dash_ua_port(self, data):
+        specs = [
+        [{'type': 'pie', 'colspan': 2, 'rowspan': 4}, None, {'type': 'pie', 'colspan': 2, 'rowspan': 4}, None],
+        [None, None, None, None],
+        [None, None, None, None], 
+        [None, None, None, None]
+    ]
+            
+        font_family = 'Pretendard Black, sans-serif'
+
+
+        fig13 = self.category_pie_plot(data, 'uDstPort')
+        fig11 = self.category_pie_plot(data, 'sUA')
+      
+
+        # 대시보드 그래프 배열
+        fig = make_subplots(
+            rows=4, cols=4,
+            # vertical_spacing=0.1,
+            # horizontal_spacing=0.1, 
+            specs=specs,  # 그래프 간의 수직 간격 조정
+            subplot_titles=['UA Ratio', 'Port Number Ratio']        )
+
+        fig11.data[0]['showlegend'] = False
+        # fig13.data[0]['showlegend'] = False
+     
+        fig11.data[0]['marker']['colors'] =  ['#7b68ee', 'd8bfd8', 'b0e0e6', 'ff009f', 'ffc0cb']
+
+        fig13.data[0]['marker']['colors'] =  ['ffc0cb', 'ff009f', 'b0e0e6', 'd8bfd8','#7b68ee']
+
+        # 그래프에 폰트 적용
+        fig.update_layout(
+            font=dict(family=font_family)
+        )
+
+    
+
+        fig.add_trace(fig11.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
+        fig.add_trace(fig13.data[0], row=1, col=3)  # colspan을 사용하여 두 개의 열 차지
+
+
+        # fig.add_trace(fig12.data[1], row=6, col=1)
+        # fig.add_trace(fig12.data[2], row=7, col=1)
+        # fig.add_trace(fig12.data[3], row=8, col=1)
+
+
+        fig.update_layout(template='none')
+
+        return fig

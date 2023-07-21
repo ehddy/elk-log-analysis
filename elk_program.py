@@ -1657,7 +1657,7 @@ class Modeling(Elk):
         user_name = describe_data['가입자 ID'][0]
         ip_describe = self.get_ip_describe(data)
         top_country = ip_describe.groupby('country')['connect_count'].sum().sort_values(ascending=False)[:1].index[0]
-
+        
         
         specs = [
             [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
@@ -1666,13 +1666,13 @@ class Modeling(Elk):
             [None, None, None, None],
             [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
             [None, None, None, None],
-            [{'type': 'indicator', 'colspan' : 2, 'rowspan': 4}, None, None, None], 
+            [{'type': 'indicator', 'colspan' : 4, 'rowspan': 2}, None, None, None], 
             [None, None, None, None],     
         ]
         
         font_family = 'Pretendard Black, sans-serif'
 
-        from visualize import Visualize
+        from elk.visualize import Visualize
 
         v = Visualize()
 
