@@ -118,44 +118,42 @@ class Visualize:
                     )
         
         return fig
+    
 
-        
-        
-    # 산점도 
-    def scatter_plot(self, data, column_1, column_2, label):
-
-        X = data[column_1]  # 차단 수 데이터
-        y = data[column_2]  # 차단율(%) 데이터
-        labels = data[label]  # 마커에 표시할 라벨 데이터
-
-        # 산점도 그래프 그리기
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=X,
-            y=y,
-            mode='markers',
-            text=labels,  # 마커에 표시할 라벨 데이터 지정
-            hovertemplate='%{text}',  # 호버 템플릿으로 라벨을 표시
-            marker=dict(
-                size=10,
-                color=['red', 'green', 'blue', 'yellow', 'orange'],  # 마커 색상 리스트
-                opacity=0.7
-            )
-        ))
-
+    
+    def scatter_plot(self, data, column_1, column_2):
+        # Scatter plot 생성
+        fig = px.scatter(data, x=column_1, y=column_2, title=f'{column_1} X {column_2}', template='none')
         fig.update_layout(
-            title=f'{column_1}과 {column_2}의 관계',
             xaxis_title=column_1,
             yaxis_title=column_2, 
             width=800,  # 그래프의 가로 크기 (픽셀 단위)
-            height=800# 그래프의 세로 크기 (픽셀 단위)
-
-        )
-
-        
+            height=800)# 그래프의 세로 크기 (픽셀 단위)
         return fig
 
+    def scatter_plot_label(self, data, column_1, column_2, label):
+        # Scatter plot 생성
+        fig = px.scatter(data, x=column_1, y=column_2,  color=data[label].values ,title=f'{column_1} X {column_2}',template='none')
+        fig.update_layout(
+            xaxis_title=column_1,
+            yaxis_title=column_2, 
+            width=800,  # 그래프의 가로 크기 (픽셀 단위)
+            height=800)# 그래프의 세로 크기 (픽셀 단위)
+        return fig
+    
+    
+    def scatter_plot_3d(self, data, column_1, column_2, column_3):
+        # Scatter plot 생성
+        fig = px.scatter_3d(data, x=column_1, y=column_2, z=column_3,title=f'{column_1} X {column_2}',template='none')
 
+        return fig
+    
+    def scatter_plot_3d_label(self, data, column_1, column_2, column_3, label):
+        # Scatter plot 생성
+        fig = px.scatter_3d(data, x=column_1, y=column_2, z=column_3, color=data[label].values,title=f'{column_1} X {column_2}',template='none')
+
+        return fig
+    
 
     def describe_bar_chart(self, data, column, label):
         
