@@ -1472,29 +1472,30 @@ class Modeling(Elk):
 
 
     def rule_based_modeling(self, dec_data, dev_id):
-        if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1:
+        if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1 or dec_data['최다 접속 URL'].values == 'gms.ahnlab.com' or 'steam' in dec_data['최다 접속 URL'].values:
             self.logger.info(f"{dev_id} : information short(접속시간 < 10분 or 평균 접속 수 = 0)")
-            return
+            return True
         
         if dec_data["차단 수"].values >= 10 or dec_data["차단율(%)"].values >= 50:
             self.logger.info(f"{dev_id} : Anomaly Rule matched!")
             dec_data["판별 등급"] = '위험'
             dec_data["판별 요인"] = 'Rule'
             self.save_db_data(dec_data, "abnormal_describe")
-        
+            return True
         if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 95 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 95:
             self.logger.info(f"{dev_id} : Anomaly Rule matched!")
             dec_data["판별 등급"] = '의심'
             dec_data["판별 요인"] = 'Rule'
             self.save_db_data(dec_data, "abnormal_describe")
-            return 
+            return True
         
         if dec_data["최다 접속 URL"].values == "123.57.193.95" or dec_data["최다 접속 URL"].values == "123.57.193.52":
             self.logger.info(f"{dev_id} : Anomaly Rule matched!")
             dec_data["판별 등급"] = '위험'
             dec_data["판별 요인"] = 'Rule'
             self.save_db_data(dec_data, "abnormal_describe")
-            return
+            return True
+        return False
 
 
     def return_total_label_to_elasticsearch(self, dev_id, model_list):
@@ -1506,8 +1507,10 @@ class Modeling(Elk):
         dec_data = self.get_final_dec_data_dev_id(dev_id)    
         
         # rule based model 
-        self.rule_based_modeling(dec_data, dev_id)
+        rule_yes = self.rule_based_modeling(dec_data, dev_id)
         
+        if rule_yes == True:
+            return
         # kmeans 
         kmeans_label, rf_label, gm_label, isof_label, lof_label = self.return_labels(dec_data, model_list)
         
@@ -1534,7 +1537,7 @@ class Modeling(Elk):
             self.save_db_data(dec_data, "abnormal_describe")
             return  
         
-        elif outlier_count >= 2:
+        elif outlier_count >= 3:
             self.logger.info(f"{dev_id}(km_label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label}, isof_label = {isof_label}, lof_label = {lof_label}, detect_count = {outlier_count}) : Model Detection matched!")
             dec_data["판별 등급"] = '의심'
             dec_data["판별 요인"] = 'ML Model'
