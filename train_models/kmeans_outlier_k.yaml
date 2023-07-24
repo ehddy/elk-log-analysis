@@ -1,2 +1,2 @@
-k: '4'
-kmeans_outlier_k: '2'
+k: '5'
+kmeans_outlier_k: '4'

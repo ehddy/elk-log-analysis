@@ -33,6 +33,7 @@ import statsmodels.api as sm
 from sklearn.mixture import GaussianMixture
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 
 # 경고창 제거, 로깅
 import warnings
@@ -823,7 +824,6 @@ class Elk:
         delete_date = self.korea_time - timedelta(days=num_days_to_keep)
         delete_date_str = delete_date.strftime("%Y-%m-%d")
 
-
         # 삭제할 인덱스 이름 리스트 생성
         indices_to_delete = [index for index in self.es.indices.get(index=f"{index_prefix}-*") if index < f"{index_prefix}-{delete_date_str}"]
         
@@ -1079,7 +1079,7 @@ class Modeling(Elk):
             yaml.dump(meta_data, file)
 
 
-    def GM_modeling(self, n_components=4, threshold=-15):
+    def GM_modeling(self, n_components=5, threshold=-14):
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
         
@@ -1204,7 +1204,7 @@ class Modeling(Elk):
         print(model_path, '모델 저장 완료')
         
         
-    def isolateforest_modeling(self, max_samples=100, contamination = 0.01):
+    def isolateforest_modeling(self, contamination = 0.01):
         folder_path = self.current_path + "train_models"
         os.makedirs(folder_path, exist_ok=True)
         
@@ -1212,14 +1212,14 @@ class Modeling(Elk):
         data = self.train_data_preprocessing()
         
         print('==== Isolation Forest model 학습을 시작합니다. =====')
-        isof = IsolationForest(max_samples=max_samples, contamination = contamination, random_state=42)
+        isof = IsolationForest(contamination = contamination, random_state=42)
         isof_model = isof.fit(data.values)
         print('모델 학습 중...')
         print()
         
         
         
-        print(f'Isolation Forest model  학습 완료(max_samples={max_samples}, contamination = {contamination}, data = {len(data)})')
+        print(f'Isolation Forest model  학습 완료(contamination = {contamination}, data = {len(data)})')
         print()
         
         # kmeans 모델 저장 경로
@@ -1238,11 +1238,46 @@ class Modeling(Elk):
         
         print(model_path, '모델 저장 완료')
         
+        
+    def lof_modeling(self, contamination = 0.01):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+        
+        # 학습용 데이터 불러오기
+        data = self.train_data_preprocessing()
+        
+        print('==== LOF(Local Outlier Factor) model 학습을 시작합니다. =====')
+        lof = LocalOutlierFactor(novelty=True, contamination=contamination) 
+        lof_model = lof.fit(data.values)
+        print('모델 학습 중...')
+        print()
+        
+        
+        print(f'LOF model 학습 완료(contamination = {contamination}, data = {len(data)})')
+        print()
+        
+        # kmeans 모델 저장 경로
+        model_path =  f'{folder_path}/lof_model.pkl'
+        
+        
+        data['lof_label'] = lof_model.predict(data.values)
+        print(data['lof_label'].value_counts())
+        outlier_count = data.lof_label.value_counts().loc[-1]
+        print(f'outlier count : {outlier_count}')
+        print(f'outlier ratio : {round((outlier_count / data.shape[0]) * 100, 2) }%')
+        
+        # 모델 저장
+        with open(model_path, 'wb') as f:
+            pickle.dump(lof_model , f,  protocol=pickle.HIGHEST_PROTOCOL)
+        
+        print(model_path, '모델 저장 완료')
+        
     def total_modeling(self):
         self.kmeans_modeling(k=4)
         self.dbscan_modeling(eps=1, min_samples=3)
         self.randomforest_modeling()
-        self.isolateforest_modeling(max_samples=100, contamination = 0.01)
+        self.isolateforest_modeling()
+        self.lof_modeling()
         
         print('모델 업데이트 완료')
         
@@ -1351,6 +1386,21 @@ class Modeling(Elk):
         print(isof_model_path,'Isolation Forest Model import success!')
         
         return isof_loaded_model
+    
+    def import_lof_model(self):
+        folder_path = self.current_path + "train_models"
+        os.makedirs(folder_path, exist_ok=True)
+      
+        # 모델 파일 경로
+        lof_model_path = f'{folder_path}/lof_model.pkl'
+
+        # 모델 불러오기
+        with open(lof_model_path, 'rb') as file:
+            lof_loaded_model = pickle.load(file)     
+        
+        print(lof_model_path,'LOF Model import success!')
+        
+        return lof_loaded_model
         
         
     
@@ -1384,7 +1434,7 @@ class Modeling(Elk):
     def return_labels(self, data, model_list):
    
         select_data = data[self.select_columns]    
-        scaled_data = model_list[4].transform(select_data.values)
+        scaled_data = model_list[-1].transform(select_data.values)
         
         # kmean
         kmeans_label = model_list[0].predict(scaled_data)[0]
@@ -1397,8 +1447,12 @@ class Modeling(Elk):
         
         # isolation forest
         isof_label = model_list[3].predict(scaled_data)[0]
+        
+        
+        # lof
+        lof_label = model_list[4].predict(scaled_data)[0]
    
-        return kmeans_label, rf_label, gm_label, isof_label
+        return kmeans_label, rf_label, gm_label, isof_label, lof_label
     
     
     def get_kmeans_outlier_k(self):
@@ -1455,7 +1509,7 @@ class Modeling(Elk):
         self.rule_based_modeling(dec_data, dev_id)
         
         # kmeans 
-        kmeans_label, rf_label, gm_label, isof_label = self.return_labels(dec_data, model_list)
+        kmeans_label, rf_label, gm_label, isof_label, lof_label = self.return_labels(dec_data, model_list)
         
         outlier_count = 0
         
@@ -1469,32 +1523,36 @@ class Modeling(Elk):
         
         if isof_label == -1:
             outlier_count += 1
+        
+        if lof_label == -1:
+            outlier_count += 1
             
-        if outlier_count == 4:
-            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}, detect_count = {outlier_count}) : Model Detection matched!")
+        if outlier_count >= 4:
+            self.logger.info(f"{dev_id}(km_label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label}, isof_label = {isof_label}, lof_label = {lof_label},detect_count = {outlier_count}) : Model Detection matched!")
             dec_data["판별 등급"] = '위험'
             dec_data["판별 요인"] = 'ML Model'
             self.save_db_data(dec_data, "abnormal_describe")
             return  
         
         elif outlier_count >= 2:
-            self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}, detect_count = {outlier_count}) : Model Detection matched!")
+            self.logger.info(f"{dev_id}(km_label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label}, isof_label = {isof_label}, lof_label = {lof_label}, detect_count = {outlier_count}) : Model Detection matched!")
             dec_data["판별 등급"] = '의심'
             dec_data["판별 요인"] = 'ML Model'
             self.save_db_data(dec_data, "abnormal_describe")
             return  
     
-        self.logger.info(f"{dev_id}(kmeans label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label},  isof_label = {isof_label}) : Normal User")
+        self.logger.info(f"{dev_id}(km_label = {kmeans_label}, rf_label = {rf_label}, gm_label = {gm_label}, isof_label = {isof_label}, lof_label = {lof_label}) : Normal User")
                
     def total_model_load(self):
         kmeans_loaded_model = self.import_kmeans_model()
         gm_loaded_model = self.import_GM_model()
         rf_loaded_model = self.import_rf_model()
         isof_loaded_model = self.import_isof_model()
+        lof_loaded_model = self.import_lof_model()
         loaded_scaler  = self.import_scaler_model()
         
         
-        model_list = [kmeans_loaded_model, rf_loaded_model, gm_loaded_model, isof_loaded_model, loaded_scaler]
+        model_list = [kmeans_loaded_model, rf_loaded_model, gm_loaded_model, isof_loaded_model, lof_loaded_model,loaded_scaler]
     
         return model_list
 
