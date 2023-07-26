@@ -1477,11 +1477,19 @@ class Modeling(Elk):
             return True
         
         if dec_data["차단 수"].values >= 10 or dec_data["차단율(%)"].values >= 50:
-            self.logger.info(f"{dev_id} : Anomaly Rule matched!")
-            dec_data["판별 등급"] = '위험'
-            dec_data["판별 요인"] = 'Rule'
-            self.save_db_data(dec_data, "abnormal_describe")
-            return True
+            if dec_data['최대 빈도 URL 접속 비율(%)'].values >= 80 or dec_data['최다 이용 UA 접속 비율(%)'].values >= 80:
+                self.logger.info(f"{dev_id} : Anomaly Rule matched!")
+                dec_data["판별 등급"] = '위험'
+                dec_data["판별 요인"] = 'Rule'
+                self.save_db_data(dec_data, "abnormal_describe")
+                return True
+            else:
+                self.logger.info(f"{dev_id} : Anomaly Rule matched!")
+                dec_data["판별 등급"] = '의심'
+                dec_data["판별 요인"] = 'Rule'
+                self.save_db_data(dec_data, "abnormal_describe")
+                return True
+            
         if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 95 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 95:
             self.logger.info(f"{dev_id} : Anomaly Rule matched!")
             dec_data["판별 등급"] = '의심'
