@@ -1472,9 +1472,14 @@ class Modeling(Elk):
 
 
     def rule_based_modeling(self, dec_data, dev_id):
-        if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1 or dec_data['최다 접속 URL'].values == 'gms.ahnlab.com' or 'steam' in dec_data['최다 접속 URL'].values:
+        if dec_data['접속 시간(분)'].values <= 30 or dec_data['평균 접속 수(1분)'].values <= 1:
             self.logger.info(f"{dev_id} : information short(접속시간 < 10분 or 평균 접속 수 = 0)")
             return True
+        
+        if dec_data['최다 접속 URL'].values == 'gms.ahnlab.com' or 'steam' in dec_data['최다 접속 URL'].values:
+            self.logger.info(f"{dev_id} : Included in white URL list")
+            return True
+        
         
         if dec_data["차단 수"].values >= 10 or dec_data["차단율(%)"].values >= 50:
             if dec_data['최대 빈도 URL 접속 비율(%)'].values >= 80 or dec_data['최다 이용 UA 접속 비율(%)'].values >= 80:
@@ -1513,7 +1518,18 @@ class Modeling(Elk):
         
         
         dec_data = self.get_final_dec_data_dev_id(dev_id)    
-        dec_data['최다 접속 포트 번호'] = dec_data['최다 접속 포트 번호'].astype(str)
+        
+        # 현재 시간 구하기
+        now = datetime.now()
+
+        # 한국 시간대로 변환
+        korea_timezone = pytz.timezone("Asia/Seoul")
+        korea_time = now.astimezone(korea_timezone)
+
+        # 날짜 문자열 추출 (시, 분 포함)
+        timestamp = korea_time.strftime("%Y-%m-%d %H:%M")
+        dec_data['timastamp'] = timestamp 
+        
         
         # rule based model 
         rule_yes = self.rule_based_modeling(dec_data, dev_id)
