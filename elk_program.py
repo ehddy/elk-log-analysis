@@ -900,6 +900,7 @@ class Modeling(Elk):
         print('학습용 데이터 불러오기 완료')
 
         data = data[self.select_columns]
+
         print('모델 전처리 및 학습용 변수 선택 완료')
         print()
         # 표준화 진행 및 저장   
@@ -1435,7 +1436,6 @@ class Modeling(Elk):
    
         select_data = data[self.select_columns]    
         scaled_data = model_list[-1].transform(select_data.values)
-        
         # kmean
         kmeans_label = model_list[0].predict(scaled_data)[0]
      
@@ -1513,6 +1513,7 @@ class Modeling(Elk):
         
         
         dec_data = self.get_final_dec_data_dev_id(dev_id)    
+        dec_data['최다 접속 포트 번호'] = dec_data['최다 접속 포트 번호'].astype(str)
         
         # rule based model 
         rule_yes = self.rule_based_modeling(dec_data, dev_id)
