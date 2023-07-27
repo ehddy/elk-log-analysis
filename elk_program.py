@@ -1526,9 +1526,9 @@ class Modeling(Elk):
         korea_timezone = pytz.timezone("Asia/Seoul")
         korea_time = now.astimezone(korea_timezone)
 
-        # 날짜 문자열 추출 (시, 분 포함)
-        timestamp = korea_time.strftime("%Y-%m-%d %H:%M")
-        dec_data['timastamp'] = timestamp 
+
+        dec_data['timestamp'] = korea_time
+        
         
         
         # rule based model 
