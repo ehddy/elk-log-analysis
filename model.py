@@ -7,8 +7,6 @@ def run_scheduler():
     model.process()
 
     schedule.every(0.5).minutes.do(model.process)
-    model = Modeling()
-
     while True:
         schedule.run_pending()
         time.sleep(1)

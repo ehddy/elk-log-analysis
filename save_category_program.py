@@ -14,7 +14,6 @@ def run_scheduler():
 
     schedule.every(1).minutes.do(app.save_keywords_match_data(shopping_keywords, 'shopping'))
     
-    app = Elk()
     while True:
         schedule.run_pending()
         time.sleep(1)

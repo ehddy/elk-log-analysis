@@ -9,7 +9,6 @@ def run_scheduler():
     app.save_db_random_devid()
 
     schedule.every(1).minutes.do(app.save_db_random_devid)
-    app = Elk()
     while True:
         schedule.run_pending()
         time.sleep(1)
