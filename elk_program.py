@@ -413,6 +413,20 @@ class Elk:
         dec_data = self.describe(scaled_data)
         
         return dec_data
+    
+    def get_abnormal_data_show(self):
+        data = self.get_index_data('abnormal_describe*')
+        id_count_dic = data.groupby('가입자 ID')['전체 접속 횟수'].count().sort_values(ascending=False).to_dict()        
+        data['비정상 판별 횟수'] = data['가입자 ID'].apply(lambda x : id_count_dic[x])
+        data = data.sort_values(by='timestamp', ascending=False)  
+        data = data.drop_duplicates(subset='가입자 ID', keep='first') 
+        data = data.sort_values(by=['비정상 판별 횟수', '판별 등급', '평균 접속 수(1분)'], ascending=[False, True, False])
+        data.reset_index(drop=True, inplace=True)
+        data.drop('timestamp', axis=1, inplace=True)
+        data = data[['가입자 ID', '비정상 판별 횟수','판별 등급', '판별 요인', '평균 접속 수(1분)', '차단율(%)','최다 접속 URL', '최다 접속 IP 위치', '접속 기간']]
+        data.rename({'접속 기간': '의심 접속 시간'}, axis=1, inplace=True)
+
+        return data
 
     # 3) 데이터 통합용 
 
@@ -427,6 +441,38 @@ class Elk:
             self.save_csv(new_data, dev_id)
         
         return total_df_list
+
+    def delete_data_by_id(self, index_pattern, user_id):
+
+        # 삭제할 데이터를 찾기 위한 쿼리
+        query = {
+            "query": {
+                "term": {
+                    "가입자 ID.keyword": user_id
+                }
+            }
+        }
+        try:
+            # 인덱스 패턴과 일치하는 모든 인덱스를 가져옵니다.
+            matching_indices = self.es.indices.get_alias(index=index_pattern).keys()
+
+            total_deleted = 0
+            for index_name in matching_indices:
+                # 쿼리를 실행하여 가입자 ID에 해당하는 데이터를 찾습니다.
+                result = self.es.search(index=index_name, body=query)
+
+                # 검색 결과에서 삭제 대상 문서의 ID를 가져옵니다.
+                doc_ids = [hit['_id'] for hit in result['hits']['hits']]
+
+                # 삭제 대상 문서들을 삭제합니다.
+                for doc_id in doc_ids:
+                    self.es.delete(index=index_name, id=doc_id)
+
+                total_deleted += len(doc_ids)
+
+            print(f"총 {total_deleted}개의 문서가 삭제되었습니다.")
+        except Exception as e:
+            print(f"데이터 삭제 중 오류가 발생했습니다: {e}")
 
     # 4) 집계용 
 
