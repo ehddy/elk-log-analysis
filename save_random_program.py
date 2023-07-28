@@ -4,15 +4,12 @@ import time
 
 
 
-def save_train_data():
+def run_scheduler():
     app = Elk()
     app.save_db_random_devid()
 
-def run_scheduler():
-    save_train_data()
-
-    schedule.every(1).minutes.do(save_train_data)
-
+    schedule.every(1).minutes.do(app.save_db_random_devid)
+    app = Elk()
     while True:
         schedule.run_pending()
         time.sleep(1)
