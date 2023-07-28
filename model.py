@@ -2,20 +2,18 @@ from elk_program import Modeling
 import schedule
 import time
 
-
-
-def run_scheduler():
+def model_start():
     model = Modeling()
-
     model.process()
 
-    # 1시간마다 get_db() 함수를 실행하는 스케줄러 함수입니다.
-    schedule.every(0.5).minutes.do(model.process)
+def run_scheduler():
+    model_start()
+
+    schedule.every(0.5).minutes.do(model_start)
 
     while True:
         schedule.run_pending()
         time.sleep(1)
-
 
 # 스케줄러를 실행
 run_scheduler()
