@@ -197,7 +197,7 @@ class Elk:
         block_list = self.get_sDevID("차단", 1, '30m')
         self.get_sDevID_random("1m")
         pass_list = self.get_sDevID('허용', 500, '30m')
-        pass_list = random.sample(pass_list, 100)
+        pass_list = random.sample(pass_list, 500)
         # random_list = self.get_sDevID_random('30m')
         
         total_dev_list = list(set(block_list + pass_list))
@@ -425,7 +425,7 @@ class Elk:
         data.drop('timestamp', axis=1, inplace=True)
         data = data[['가입자 ID', '비정상 판별 횟수','판별 등급', '판별 요인', '평균 접속 수(1분)', '차단율(%)','최다 접속 URL', '최다 접속 IP 위치', '접속 기간']]
         data.rename({'접속 기간': '의심 접속 시간'}, axis=1, inplace=True)
-
+        
         return data
 
     # 3) 데이터 통합용 
