@@ -450,7 +450,7 @@ class Elk:
                 "term": {
                     "가입자 ID.keyword": user_id
                 }
-            }
+            } , "size": 10000
         }
         try:
             # 인덱스 패턴과 일치하는 모든 인덱스를 가져옵니다.
