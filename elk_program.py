@@ -195,8 +195,7 @@ class Elk:
 
     def get_pass_block_dev_list(self):
         block_list = self.get_sDevID("차단", 1, '30m')
-        self.get_sDevID_random("1m")
-        pass_list = self.get_sDevID('허용', 500, '30m')
+        pass_list = self.get_sDevID('허용', 100, '30m')
         pass_list = random.sample(pass_list, 500)
         # random_list = self.get_sDevID_random('30m')
         
@@ -1541,7 +1540,7 @@ class Modeling(Elk):
                 self.save_db_data(dec_data, "abnormal_describe")
                 return True
             
-        if dec_data["평균 접속 수(1분)"].values >= 100 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 95 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 95:
+        if dec_data["평균 접속 수(1분)"].values >= 500 and dec_data["최다 이용 UA 접속 비율(%)"].values >= 95 and dec_data["최대 빈도 URL 접속 비율(%)"].values >= 95:
             self.logger.info(f"{dev_id} : Anomaly Rule matched!")
             dec_data["판별 등급"] = '의심'
             dec_data["판별 요인"] = 'Rule'
