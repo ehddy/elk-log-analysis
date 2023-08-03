@@ -449,7 +449,7 @@ class Elk:
         data.reset_index(drop=True, inplace=True)
         data.drop('timestamp', axis=1, inplace=True)
         data = data[['가입자 ID', '비정상 판별 횟수','판별 등급', '판별 요인', '평균 접속 수(1분)', '차단율(%)','최다 접속 URL', '최다 접속 IP 위치', '접속 기간']]
-        data.rename({'접속 기간': '의심 접속 시간'}, axis=1, inplace=True)
+        data.rename({'접속 기간': '의심 접속 시간(최근 순)'}, axis=1, inplace=True)
         
         return data
 
