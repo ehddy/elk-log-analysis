@@ -74,11 +74,16 @@ class Elk:
         self.logger.addHandler(self.log_handler)
 
 
+        try:
+            with open(self.current_path + 'config.yaml', encoding='UTF-8') as f:
+                _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-        with open(self.current_path + 'config.yaml', encoding='UTF-8') as f:
-            _cfg = yaml.load(f, Loader=yaml.FullLoader)
-
+        except:
+             with open('/code/config.yaml', encoding='UTF-8') as f:
+                _cfg = yaml.load(f, Loader=yaml.FullLoader)
+    
         self.elasticsearch_ip = _cfg['ELASTICSEARCH_IP_ADDRESS']  
+    
 
                
         # Elasticsearch 연결
@@ -729,7 +734,16 @@ class Elk:
         documents = dec_data.to_dict(orient='records')
 
         # Elasticsearch에 데이터 색인
-        index_name = f'{index_name}-{self.korea_date}'  # 저장할 인덱스 이름
+        now = datetime.now()
+        # 한국 시간대로 변환
+        korea_timezone = pytz.timezone("Asia/Seoul")
+        korea_time = now.astimezone(korea_timezone)
+
+        # 날짜 문자열 추출
+        korea_date = korea_time.strftime("%Y-%m-%d")
+
+
+        index_name = f'{index_name}-{korea_date}'  # 저장할 인덱스 이름
         for doc in documents:
             self.es.index(index=index_name, body=doc)
     
