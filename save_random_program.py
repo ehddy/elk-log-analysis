@@ -2,13 +2,16 @@ from elk_program import Elk
 import schedule
 import time
 
+def start(app):
+    app.save_db_random_devid()
+    app.cleanup()
 
 
 def run_scheduler():
     app = Elk()
-    app.save_db_random_devid()
 
-    schedule.every(1).minutes.do(app.save_db_random_devid)
+
+    schedule.every(0.5).minutes.do(start, app)
     while True:
         schedule.run_pending()
         time.sleep(1)

@@ -6,13 +6,17 @@ import time
 shopping_keywords = ['11st', 'auction', 'coupang', 'danawa', 'cjonstyle', 'e-highmart', 'emart', 'ssg', 'gmarket', 'gsshop', 
                         'interpark', 'aliexpress', 'lotteimall', 'qoo10', 'shopping', 'smartstore', 'tmon', 'shop', 'wadiz', 'store']
 
+def start(app):
+    app.save_keywords_match_data(shopping_keywords, 'shopping')
+    app.cleanup()
+
 
 
 def run_scheduler():
     app = Elk()
-    app.save_keywords_match_data(shopping_keywords, 'shopping')
 
-    schedule.every(1).minutes.do(app.save_keywords_match_data(shopping_keywords, 'shopping'))
+
+    schedule.every(0.5).minutes.do(start, app)
     
     while True:
         schedule.run_pending()

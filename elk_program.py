@@ -89,6 +89,27 @@ class Elk:
         # Elasticsearch 연결
         self.es = Elasticsearch([self.elasticsearch_ip])
 
+
+    def cleanup(self):
+    
+        # 현재 시간과 기존 로그 파일의 생성 시간을 비교하여 하루가 지났는지 확인
+        now = datetime.now()
+        korea_timezone = pytz.timezone("Asia/Seoul")
+        current_korea_time = now.astimezone(korea_timezone)
+        current_korea_date = current_korea_time.strftime("%Y-%m-%d")
+        if current_korea_date != self.korea_date:
+            self.logger.info('next day')
+            # 로그 파일 닫기
+            self.log_handler.close()
+
+            # 날짜가 변경되었으면 새로운 로그 파일을 생성하고 로깅 핸들러 업데이트
+            self.korea_date = current_korea_date
+            self.log_filename = self.log_folder + f'elastic_program_{self.korea_date}.log'
+            self.log_handler = logging.FileHandler(self.log_filename)
+            self.log_handler.setLevel(logging.INFO)
+            self.log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+            self.logger.addHandler(self.log_handler)
+
     # UTC 시간을 한국 시간으로 변환하는 함수
     def utc_to_kst(self, utc_time):
         kst = pytz.timezone('Asia/Seoul')
@@ -710,6 +731,7 @@ class Elk:
         sDevID_list = self.get_sDevID_random("1m")
         
         total_dev_list = list(set(block_list + sDevID_list))
+        self.logger.info(f'import {len(total_dev_list)} Users')     
         for dev_id in total_dev_list:
             try:
                 dec_data = self.get_final_dec_data_dev_id(dev_id)
@@ -779,6 +801,7 @@ class Elk:
     def save_keywords_match_data(self, keyword_lists, category_name):
         # 랜덤으로 추출
         dev_id = self.get_keywords_match_devid('sHost', keyword_lists, '10m', random_option=True)
+        self.logger.info(f'import {len(dev_id)} Users')   
     
         for dev in dev_id:
             try:
@@ -1649,13 +1672,17 @@ class Modeling(Elk):
 
         # 허용 block 혼합 버전
         dev_id_list = self.get_pass_block_dev_list()
-        
+        self.logger.info(f'import {len(dev_id_list)} Users')        
+    
+
         # 모델 로드
         model_list = self.total_model_load()
         
 
         for dev_id in dev_id_list:
             self.return_total_label_to_elasticsearch(dev_id, model_list)
+        
+
 
 # 데이터를 로드하고 전처리한 후 X에 저장
 # 최대 클러스터 개수 설정
