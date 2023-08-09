@@ -1618,9 +1618,14 @@ class Modeling(Elk):
         
         if rule_yes == True:
             return
-        # kmeans 
-        kmeans_label, rf_label, gm_label, isof_label, lof_label = self.return_labels(dec_data, model_list)
-        
+
+        try: 
+            kmeans_label, rf_label, gm_label, isof_label, lof_label = self.return_labels(dec_data, model_list)
+        except:
+            self.logger.info(f"{dev_id} Model Error Return!")
+            return
+
+
         outlier_count = 0
         
         if kmeans_label == kmeans_outlier_k:
