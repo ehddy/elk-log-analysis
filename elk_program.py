@@ -126,7 +126,7 @@ class Elk:
     # 랜덤하게 가입자 추출
     def get_sDevID_random(self, time_choice):
  
-
+        now_utc = datetime.utcnow()
         # Elasticsearch에서 데이터 검색
         res = self.es.search(
             index='sa*',
@@ -144,8 +144,8 @@ class Elk:
                 "query": {
                     "range": {
                         "@timestamp": {
-                            "gte": f"now-{time_choice}",
-                            "lt": "now"
+                            "gte": (now_utc - timedelta(minutes=time_choice)).isoformat(),
+                            "lt": now_utc.isoformat()
                         }
                     }
                 }
@@ -170,7 +170,7 @@ class Elk:
 
     # 차단 허용 기준으로 가입자 추출
     def get_sDevID(self, cRes, min_count, time_choice):
-
+        now_utc = datetime.utcnow()
         # Elasticsearch에서 데이터 검색
         res = self.es.search(
             index='sa*',
@@ -192,8 +192,8 @@ class Elk:
                         {
                             "range": {
                                 "@timestamp": {
-                                    "gte": f"now-{time_choice}",
-                                    "lt": "now"
+                                        "gte": (now_utc - timedelta(minutes=time_choice)).isoformat(),
+                                        "lt": now_utc.isoformat()
                                 }
                             }
                         },
@@ -220,8 +220,10 @@ class Elk:
         return sDevID_list
 
     def get_pass_block_dev_list(self):
-        block_list = self.get_sDevID("차단", 1, '30m')
-        pass_list = self.get_sDevID('허용', 100, '30m')
+        block_list = self.get_sDevID("차단", 1, 30)
+        pass_list = self.get_sDevID('허용', 100, 30)
+    
+
         pass_list = random.sample(pass_list, 500)
         # random_list = self.get_sDevID_random('30m')
         
@@ -231,6 +233,7 @@ class Elk:
 
     # 키워드 기준으로 가입자 추출(100명)
     def get_keywords_match_devid(self, column_name, match_keywords, time_choice, random_option=False): 
+        now_utc = datetime.utcnow()
         wildcard_queries = []
         for keyword in match_keywords:
             wildcard_query = {
@@ -262,8 +265,8 @@ class Elk:
                             {
                                 "range": {
                                     "@timestamp": {
-                                        "gte": f"now-{time_choice}",
-                                        "lt": "now"
+                                        "gte": (now_utc - timedelta(minutes=time_choice)).isoformat(),
+                                        "lt": now_utc.isoformat()
                                     }
                                 }
                             }
@@ -333,6 +336,9 @@ class Elk:
 
     # 가입자 이름을 기준으로 모든 데이터 추출 
     def get_sDevID_data(self, user_id):
+    # 현재 시간을 UTC로 얻어옵니다.
+        now_utc = datetime.utcnow()
+
         # Elasticsearch에서 데이터 검색
         res = self.es.search(
             index='sa*',
@@ -348,8 +354,8 @@ class Elk:
                             {
                                 "range": {
                                     "@timestamp": {
-                                        "gte": "now-1h",
-                                        "lt": "now"
+                                        "gte": (now_utc - timedelta(hours=1)).isoformat(),
+                                        "lt": now_utc.isoformat()
                                     }
                                 }
                             }
@@ -360,31 +366,25 @@ class Elk:
             },
             scroll='10m'  # 스크롤 유지 시간 설정
         )
-        
-        # 첫 번째 스크롤 결과 가져오기
-        data = pd.DataFrame([hit['_source'] for hit in res['hits']['hits']])
-        
-        
-        scroll_id = res['_scroll_id']
-        hits_list = []
-        
-        while True:
-            res = self.es.scroll(scroll_id=scroll_id, scroll='10m')
-            if len(res['hits']['hits']) == 0:
-                break
-            hits = res['hits']['hits']
-            hits_list.extend(hits)
-        
-        self.es.clear_scroll(scroll_id=scroll_id)
-        data_scroll = pd.DataFrame([hit['_source'] for hit in hits_list])
-        data = pd.concat([data, data_scroll])
 
-        
+        # 첫 번째 스크롤 결과 가져오기
+        hits_list = res['hits']['hits']
+        scroll_id = res['_scroll_id']
+
+        # 나머지 스크롤 결과 가져오기
+        while len(hits_list) < res['hits']['total']['value']:
+            res = self.es.scroll(scroll_id=scroll_id, scroll='10m')
+            hits_list.extend(res['hits']['hits'])
+
+        self.es.clear_scroll(scroll_id=scroll_id)
+        data = pd.DataFrame([hit['_source'] for hit in hits_list])
+
         return data
 
 
     # 특정 키워드 1개를 기준으로 포함 데이터 가져오기
     def get_category_match_data(self, column_name, match_keyword):
+        now_utc = datetime.utcnow()
         res = self.es.search(
             index='sa*',
             body={
@@ -399,8 +399,8 @@ class Elk:
                             {
                                 "range": {
                                     "@timestamp": {
-                                        "gte": "now-1h",
-                                        "lt": "now"
+                                        "gte": (now_utc - timedelta(hours=1)).isoformat(),
+                                        "lt": now_utc.isoformat()
                                     }
                                 }
                             }
@@ -637,7 +637,7 @@ class Elk:
         for name in unique_list:
             category_data = data.loc[data[column_name] == name, :]
             categoty_segment_data.append(category_data)
-            dec = self.describe(new_category_data)
+            dec = self.describe(data)
             dec[column_name] = name
             unique_describe.append(dec)
             
@@ -727,8 +727,8 @@ class Elk:
 
     # 랜덤 가입자 집계 데이터 저장 
     def save_db_random_devid(self):
-        block_list = self.get_sDevID("차단", 1, '30m')
-        sDevID_list = self.get_sDevID_random("1m")
+        block_list = self.get_sDevID("차단", 1, 30)
+        sDevID_list = self.get_sDevID_random(1)
         
         total_dev_list = list(set(block_list + sDevID_list))
         self.logger.info(f'import {len(total_dev_list)} Users')     
