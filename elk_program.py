@@ -800,7 +800,7 @@ class Elk:
     # 여러 keyword별 가입자의 데이터를 elasticsearch에 저장 
     def save_keywords_match_data(self, keyword_lists, category_name):
         # 랜덤으로 추출
-        dev_id = self.get_keywords_match_devid('sHost', keyword_lists, '10m', random_option=True)
+        dev_id = self.get_keywords_match_devid('sHost', keyword_lists, 10, random_option=True)
         self.logger.info(f'import {len(dev_id)} Users')   
     
         for dev in dev_id:
@@ -1508,7 +1508,7 @@ class Modeling(Elk):
     
     def gmm_predict(self, data, model):
         log_probs = model.score_samples(data)
-        threshold = -15 # 임계값 설정 (적절한 값으로 조정해야 함)
+        threshold = -14 # 임계값 설정 (적절한 값으로 조정해야 함)
         
         outlier_label = np.where(log_probs < threshold, 1, 0)
         
@@ -1820,119 +1820,4 @@ class Modeling(Elk):
     
 
 
-    def get_device_id_dash(self, dev_id):
-        dev_data = self.get_sDevID_data(dev_id)
-        data = self.preprocessing_data(dev_data)
-        describe_data = self.describe(data)
     
-        
-        user_name = describe_data['가입자 ID'][0]
-        ip_describe = self.get_ip_describe(data)
-        top_country = ip_describe.groupby('country')['connect_count'].sum().sort_values(ascending=False)[:1].index[0]
-        
-        
-        specs = [
-            [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
-            [{'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}, {'type': 'indicator'}],
-            [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
-            [None, None, None, None],
-            [{'type': 'xy', 'colspan': 2, 'rowspan': 2}, None, {'type': 'xy', 'colspan': 2, 'rowspan': 2}, None],
-            [None, None, None, None],
-            [{'type': 'indicator', 'colspan' : 4, 'rowspan': 2}, None, None, None], 
-            [None, None, None, None],     
-        ]
-        
-        font_family = 'Pretendard Black, sans-serif'
-
-        from elk.visualize import Visualize
-
-        v = Visualize()
-
-        # {'type': 'xy', 'colspan': 2}, None,
-        fig1 = v.gage_chart(describe_data, '차단율(%)')
-        fig2 = v.gage_chart(describe_data, '최대 빈도 URL 접속 비율(%)')
-        fig3 = v.gage_chart(describe_data, '최다 이용 UA 접속 비율(%)')
-        fig4 = v.gage_chart(describe_data, '접속 횟수 대비 고유 URL 비율(%)')
-        fig6 = v.text_chart(describe_data, '전체 접속 횟수')
-        fig7 = v.text_chart(describe_data, '평균 접속 수(1분)')
-        fig8 = v.text_chart(describe_data, '평균 접속 간격(초)')
-        fig9 = v.text_chart(describe_data, '접속 UA 수')
-        fig10 = v.value_counts_top10_bar(data, 'sHost')
-        fig11 = v.value_counts_top10_bar(data, 'sUA')
-        fig12 = v.seasonal_decompose_plot(data, period=5)
-        fig13 = v.ip_location_table(ip_describe)
-
-        # 대시보드 그래프 배열
-        fig = make_subplots(
-            rows=8, cols=4,
-            vertical_spacing=0.1,
-            horizontal_spacing=0.1, 
-            specs=specs,  # 그래프 간의 수직 간격 조정
-            subplot_titles=['', '', '', '', 
-                        '', '','','',
-                        'Connect Pattern','Top 10 URL/UA', '', '', 
-                            f"Country of the IP address with the highest proportion : {top_country}"]
-        )
-
-        fig10.data[0]['showlegend'] = False
-        fig11.data[0]['showlegend'] = False
-        fig12.data[0]['showlegend'] = False
-        fig12.data[2]['showlegend'] = False
-
-        fig10.data[0]['marker']['color'] = 'rgb(211, 211, 211)'
-        fig11.data[0]['marker']['color'] = 'rgb(211, 211, 211)'
-
-        # 그래프에 폰트 적용
-        fig.update_layout(
-            font=dict(family=font_family)
-        )
-
-        fig.add_trace(fig1.data[0], row=2, col=1)
-        fig.add_trace(fig2.data[0], row=2, col=2)
-        fig.add_trace(fig3.data[0], row=2, col=3)
-        fig.add_trace(fig4.data[0], row=2, col=4)
-        # fig.add_trace(fig5.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig6.data[0], row=1, col=1)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig7.data[0], row=1, col=2)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig8.data[0], row=1, col=3)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig9.data[0], row=1, col=4)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig10.data[0], row=3, col=3)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig11.data[0], row=5, col=3)  # colspan을 사용하여 두 개의 열 차지
-        fig.add_trace(fig12.data[0], row=3, col=1)
-        fig.add_trace(fig12.data[2], row=5, col=1)
-        fig.add_trace(fig13.data[0], row=7, col=1)
-
-        # fig.add_trace(fig12.data[1], row=6, col=1)
-        # fig.add_trace(fig12.data[2], row=7, col=1)
-        # fig.add_trace(fig12.data[3], row=8, col=1)
-
-
-        # 특정 그래프의 Y 축 제목 설정
-        fig.update_yaxes(title_text='Original', title_font=dict(size=15), row=3, col=1)
-        fig.update_yaxes(title_text='Seasonality', title_font=dict(size=15), row=5, col=1)
-
-
-        # 표 레이아웃 설정
-        fig.update_layout(
-            title={
-                'text': f"<{user_name}> Status in the Last 1 Hour",
-                'font': {'size': 30, 'family': font_family}
-            },
-        )
-
-
-
-        # # 대시보드 출력
-        # fig.show()
-
-        # 그래프를 HTML로 저장
-        # html_path = self.current_path + 'dashboard.html'
-        # pyo.plot(fig, filename= html_path)
-        # print(html_path, ' dashboard 저장 완료!')
-        # print()
-        return fig 
-
-
-# app = SEGMENT()
-
-# print(app.get_sDevID_random('10m'))
