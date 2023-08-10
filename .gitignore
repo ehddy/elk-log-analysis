@@ -18,4 +18,4 @@ docker_images
 flask_project
 results
 *.tar
-.DS_Store
+*.DS_Store
