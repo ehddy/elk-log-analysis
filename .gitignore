@@ -4,7 +4,6 @@
 *.swp
 config.yaml
 *.udb
-*.txt
 .ipynb_checkpoints
 __pycache__
 *.ipynb
@@ -19,3 +18,4 @@ flask_project
 results
 *.tar
 *.DS_Store
+acct.udb.txt
