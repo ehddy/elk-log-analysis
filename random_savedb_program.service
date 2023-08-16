@@ -1,0 +1,12 @@
+[Unit]
+Description=Save Randome data to Elasticsearch
+Restart=on-failure
+RestartSec=10s
+[Service]
+StandardOutput=/var/log/save_random_program.log
+StandardError=/var/log/save_random_program.log
+WorkingDirectory=/code
+ExecStart=/usr/local/bin/python3 /code/save_random_program.py
+
+[Install]
+WantedBy=default.target

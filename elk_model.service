@@ -1,0 +1,12 @@
+[Unit]
+Description=Python elk Demo Service
+Restart=on-failure
+RestartSec=10s
+[Service]
+StandardOutput=/var/log/elk_project.log
+WorkingDirectory=/code
+StandardError=/var/log/elk_project_error.log
+ExecStart=/usr/local/bin/python3 /code/model.py
+
+[Install]
+WantedBy=default.target

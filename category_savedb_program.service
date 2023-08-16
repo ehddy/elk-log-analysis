@@ -1,0 +1,13 @@
+[Unit]
+Description=save Category User data to Elasticsearch
+Restart=on-failure
+RestartSec=10s
+[Service]
+StandardOutput=/var/log/save_category_program.log
+StandardError=/var/log/save_category_program.log
+WorkingDirectory=/code
+ExecStart=/usr/local/bin/python3 /code/save_category_program.py
+
+[Install]
+WantedBy=default.target
+
